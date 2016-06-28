@@ -1,0 +1,6 @@
+output:
+  time_unit: day
+  time_step: 30
+  sync_interval: -1
+  variables:
+    - source: fabm/*

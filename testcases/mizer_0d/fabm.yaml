@@ -1,0 +1,65 @@
+instances:
+  fish:
+    check_conservation: false
+    model: mizer/size_structured_population
+    parameters:
+      nclass: 100
+      nprey: 30
+      w_inf: 9e5
+      w_min: 1e-3
+      z0: 0.2              # as in Mike Spence's MIZER demo
+      alpha: 0.2
+      h: 10
+      beta: 100
+      sigma: 2
+      q: 0.8
+      n: 0.666666667
+      kappa: 1000
+      f0: 0.7
+      ks: 0
+      SRR: 0
+      recruitment: 3e7     # as in Mike Spence's MIZER demo
+      lambda: 2.1333
+    coupling:
+      Nw_prey1: resource/Nw1
+      Nw_prey2: resource/Nw2
+      Nw_prey3: resource/Nw3
+      Nw_prey4: resource/Nw4
+      Nw_prey5: resource/Nw5
+      Nw_prey6: resource/Nw6
+      Nw_prey7: resource/Nw7
+      Nw_prey8: resource/Nw8
+      Nw_prey9: resource/Nw9
+      Nw_prey10: resource/Nw10
+      Nw_prey11: resource/Nw11
+      Nw_prey12: resource/Nw12
+      Nw_prey13: resource/Nw13
+      Nw_prey14: resource/Nw14
+      Nw_prey15: resource/Nw15
+      Nw_prey16: resource/Nw16
+      Nw_prey17: resource/Nw17
+      Nw_prey18: resource/Nw18
+      Nw_prey19: resource/Nw19
+      Nw_prey20: resource/Nw20
+      Nw_prey21: resource/Nw21
+      Nw_prey22: resource/Nw22
+      Nw_prey23: resource/Nw23
+      Nw_prey24: resource/Nw24
+      Nw_prey25: resource/Nw25
+      Nw_prey26: resource/Nw26
+      Nw_prey27: resource/Nw27
+      Nw_prey28: resource/Nw28
+      Nw_prey29: resource/Nw29
+      Nw_prey30: resource/Nw30
+      waste: resource/waste
+  resource:
+    check_conservation: false
+    model: mizer/resource_spectrum
+    parameters:
+      nclass: 30
+      w_min: 1e-10
+      w_max: 1.e-3
+      kappa: 1000.
+      lambda: 2.1333
+      r0: 10.
+      n: 0.666666667
