@@ -43,6 +43,7 @@ module mizer_size_structured_population
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_reproduction(:)    ! Reproduction per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_f(:)               ! Functional response per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_g(:)               ! Specific growth rate per size class
+      type (type_dependency_id)                                 :: id_T                  ! Temperature
 
       ! Number of size classes and prey
       integer :: nclass
@@ -64,6 +65,10 @@ module mizer_size_structured_population
       real(rk) :: recruitment ! constant recruitment flux (SSR=0)
       real(rk) :: R_max       ! maximum recruitment flux (SSR=2)
 
+      integer  :: T_dependence ! Type of temperature dependence (0: none, 1: Arrhenius)
+      real(rk) :: c1           ! Reference constant in Arrhenius equation = E_a/k/(T_ref+Kelvin)
+      real(rk) :: E_a          ! Activation energy (eV)
+
       ! Size-class-dependent parameters that will be precomputed during initialization
       real(rk), allocatable :: V(:)            ! volumetric search rate (Eq M2)
       real(rk), allocatable :: I_max(:)        ! maximum ingestion rate (Eq M4)
@@ -80,6 +85,9 @@ module mizer_size_structured_population
 
    ! Standard variable ("total mass") used for mass conservation checking
    type (type_bulk_standard_variable),parameter :: total_mass = type_bulk_standard_variable(name='total_mass',units='g',aggregate_variable=.true.,conserved=.true.)
+
+   real(rk) :: Kelvin = 273.15_rk      ! offset of Celsius temperature scale (K)
+   real(rk) :: Boltzmann = 8.62e-5_rk  ! Boltzmann constant
 !
 !EOP
 !-----------------------------------------------------------------------
@@ -105,6 +113,7 @@ contains
    real(rk)           :: k_vb,n,q,p,w_mat,w_inf,gamma,h,ks,f0,z0
    real(rk)           :: z0pre,z0exp
    real(rk)           :: kappa,lambda
+   real(rk)           :: T_ref
    real(rk)           :: S1,S2,F
    character(len=10)  :: strindex
    real(rk),parameter :: pi = 4*atan(1.0_rk)
@@ -145,6 +154,15 @@ contains
    call self%get_parameter(S2,         'S2',         'g-1',      'scale factor for fishing selectivity exponent', default=0.0_rk, minimum=0.0_rk)
    call self%get_parameter(F,          'F',          'yr-1',     'fishing effort',                                default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    call self%get_parameter(cannibalism,'cannibalism','',         'whether to enable intraspecific predation', default=.true.)
+
+   call self%get_parameter(self%T_dependence, 'T_dependence', '', 'temperature dependence (0: none, 1: Arrhenius)', default=0)
+   select case (self%T_dependence)
+   case (1)
+      call self%get_parameter(self%E_a, 'E_a',   'eV',              'activation energy',     default=0.63_rk)
+      call self%get_parameter(T_ref,    'T_ref', 'degrees_Celsius', 'reference temperature', default=13._rk)
+      self%c1 = self%E_a/Boltzmann/(T_ref+Kelvin)
+      call self%register_dependency(self%id_T, standard_variables%temperature)
+   end select
 
    ! Pre-factor for maximum ingestion rate derived from von Bertalanffy growth rate and background feeding level as described in appendix B
    h = 3*k_vb*w_inf**(1.0_rk/3.0_rk)/self%alpha/f0
@@ -290,7 +308,7 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey
-      real(rk) :: E_e,E_a,f,total_reproduction,T_lim,g_tot,R,R_p,nflux(0:self%nclass)
+      real(rk) :: E_e,E_a,f,total_reproduction,T_lim,temp,g_tot,R,R_p,nflux(0:self%nclass)
       real(rk),dimension(self%nprey)  :: Nw_prey,prey_loss
       real(rk),dimension(self%nclass) :: Nw,I,maintenance,g,mu,reproduction
       real(rk), parameter :: delta_t = 12._rk/86400
@@ -309,7 +327,12 @@ contains
          Nw_prey = max(Nw_prey,0._rk)
 
          ! Temperature limitation factor affecting all rates (not in Blanchard et al.)
-         T_lim = 1
+         if (self%T_dependence==1) then
+            _GET_(self%id_T, temp)
+            T_lim = exp(self%c1-self%E_A/Boltzmann/(temp+Kelvin))
+         else
+            T_lim = 1
+         end if
 
          ! Food uptake (all size classes, all prey types)
          ! This computes total ingestion per size class (over all prey), and total loss per prey type (over all size classes)
