@@ -1,0 +1,42 @@
+instances:
+  P1:
+    model: mizer/prey
+    parameters:
+      w: 1e-6
+  P2:
+    model: mizer/prey
+    parameters:
+      w: 1e-5
+  P3:
+    model: mizer/prey
+    parameters:
+      w: 1e-4
+  fish:
+    coupling:
+      Nw_prey1: P2/Nw
+      Nw_prey2: P3/Nw
+      Nw_prey3: P1/Nw
+      waste: zero_hz
+    model: mizer/size_structured_population
+    parameters:
+      E_a: 0.63
+      SRR: 0
+      T_dependence: 1
+      T_ref: 13.0
+      alpha: 0.2
+      beta: 100
+      gamma: 64.0
+      h: 1e9
+      ks: 0.0
+      nclass: 100
+      nprey: 3
+      q: 0.82
+      recruitment: 3e7
+      sigma: 2.2
+      w_inf: 1e6
+      w_min: 1e-3
+      w_s: 1000.0
+      z0_type: 1
+      z0exp: -0.25
+      z0pre: 0.1
+      z_s: 0.3

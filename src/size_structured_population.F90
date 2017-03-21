@@ -111,10 +111,11 @@ contains
    logical            :: cannibalism
    real(rk)           :: delta_logw
    real(rk)           :: k_vb,n,q,p,w_mat,w_inf,gamma,h,ks,f0,z0
-   real(rk)           :: z0pre,z0exp
+   real(rk)           :: z0pre,z0exp,w_s,z_s
    real(rk)           :: kappa,lambda
    real(rk)           :: T_ref
    real(rk)           :: S1,S2,F
+   integer            :: z0_type
    character(len=10)  :: strindex
    real(rk),parameter :: pi = 4*atan(1.0_rk)
    real(rk),parameter :: sec_per_year = 86400*365.2425_rk
@@ -132,8 +133,11 @@ contains
    call self%get_parameter(n,          'n',      '-',    'exponent of max. consumption',       default=2.0_rk/3.0_rk)
    call self%get_parameter(q,          'q',      '-',    'exponent of search volume',          default=0.8_rk)
    call self%get_parameter(p,          'p',      '-',    'exponent of standard metabolism',    default=0.7_rk)
+   call self%get_parameter(z0_type,    'z0_type','',     'type of background mortality (0: constant, 1: allometric function of size)', default=0)
    call self%get_parameter(z0pre,      'z0pre',  'yr-1', 'pre-factor for background mortality',default=0.6_rk,   minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    call self%get_parameter(z0exp,      'z0exp',  '-',    'exponent of background mortality',   default=n-1)
+   call self%get_parameter(w_s,        'w_s',    'g',    'start weight for senescence mortality',default=0._rk, minimum=0.0_rk)
+   call self%get_parameter(z_s,        'z_s',    '-',    'exponent for senescence mortality',default=0.3_rk, minimum=0.0_rk)
    call self%get_parameter(w_mat,      'w_mat',  'g',    'maturation weight', default=0.0_rk, minimum=0.0_rk)
    call self%get_parameter(w_inf,      'w_inf',  'g',    'asymptotic weight', default=1e3_rk, minimum=0.0_rk)
    call self%get_parameter(self%beta,  'beta',   '-',    'preferred predator:prey mass ratio', default=100.0_rk, minimum=0.0_rk)
@@ -173,7 +177,7 @@ contains
    !gamma = f0*h*self%beta**(2-lambda)/((1-f0)*sqrt(2*pi)*kappa*self%sigma*exp((lambda-2)**2 * self%sigma**2 / 2)) ! add exp term taken from actual R code
    call self%get_parameter(gamma, 'gamma', 'yr-1 g^(-q)', 'pre-factor for volumetric search rate', minimum=0.0_rk, default=gamma*sec_per_year, scale_factor=1._rk/sec_per_year)
 
-   ! Allow user overide of standard metabolism pre-factor (e.g., Blanchard community size spectrum model has ks=0)
+   ! Allow user override of standard metabolism pre-factor (e.g., Blanchard community size spectrum model has ks=0)
    call self%get_parameter(ks, 'ks', 'yr-1 g^(-p)', 'pre-factor for standard metabolism', minimum=0.0_rk, default=0.2_rk*h*sec_per_year, scale_factor=1._rk/sec_per_year)
 
    call self%get_parameter(z0, 'z0', 'yr-1', 'background mortality', minimum=0.0_rk, default=z0pre*w_inf**z0exp*sec_per_year, scale_factor=1._rk/sec_per_year)
@@ -199,7 +203,13 @@ contains
    self%V(:) = gamma*self%w**(q-1)      ! specific volumetric search rate (specific, hence the -1!)
    self%I_max(:) = h*self%w**(n-1)      ! specific maximum ingestion rate [s-1]; Eq M4, but specific, hence the -1!
    self%std_metab(:) = ks*self%w**(p-1) ! specific metabolism [s-1]; second term in Eq M7, but specific, hence the -1!
-   self%mu_b(:) = z0                    ! background mortality [s-1]; Eq M11
+   select case (z0_type)
+   case (0)
+      self%mu_b(:) = z0                    ! background mortality [s-1]; Eq M11
+   case (1)
+      self%mu_b(:) = z0pre*self%w**z0exp
+   end select
+   if (w_s>0.0_rk) self%mu_b = self%mu_b + 0.2/sec_per_year*(self%w/w_s)**z_s  ! Blanchard et al. 10.1098/rstb.2012.0231 Table S1
    self%F(:) = F/(1+exp(S1-S2*self%w))  ! fishing mortality [s-1]; Eqs M13 and M14 combined
    if (w_mat==0.0_rk) then
       ! No explicit reproduction as in original Blanchard community size spectrum model. Recruitment will be constant.

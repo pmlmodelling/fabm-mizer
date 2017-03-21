@@ -4,6 +4,7 @@ module mizer_model_library
 
    use mizer_size_structured_population
    use mizer_resource_spectrum
+   use mizer_prey
    ! Add new mizer models here
 
    implicit none
@@ -28,6 +29,7 @@ contains
       select case (name)
          case ('size_structured_population');    allocate(type_size_structured_population::model)
          case ('resource_spectrum');             allocate(type_resource_spectrum::model)
+         case ('prey');                          allocate(type_prey::model)
          ! Add new mizer models here
       end select
 
