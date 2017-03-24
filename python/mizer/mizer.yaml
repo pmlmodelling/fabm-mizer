@@ -19,15 +19,17 @@ parameters:
   SRR: 0
   recruitment: 3e7
   h: 1e9
-prey:
-  P1:
-    wet_mass: 1e-6
-    constant_value: 100
-  P2:
-    wet_mass: 1e-5
-    constant_value: 100
-  P3:
-    wet_mass: 1e-4
-    constant_value: 100
+  w_minF: 1.25 # Blanchard et al 2012
+  F: 0.8
+#prey:
+#  P1:
+#    wet_mass: 1e-6
+#    constant_value: 100
+#  P2:
+#    wet_mass: 1e-5
+#    constant_value: 100
+#  P3:
+#    wet_mass: 1e-4
+#    constant_value: 100
 temperature:
   constant_value: 15.

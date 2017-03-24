@@ -2,3 +2,4 @@
 *.xml
 *.dump
 *.png
+*.pyc

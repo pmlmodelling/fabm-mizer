@@ -37,6 +37,7 @@ module mizer_size_structured_population
       type (type_bottom_state_variable_id),         allocatable :: id_Nw(:)              ! Total weight per size class (sum over all individuals)
       type (type_bottom_state_variable_id),         allocatable :: id_Nw_prey(:)         ! Total weight per prey (sum over all individuals)
       type (type_bottom_state_variable_id)                      :: id_waste              ! State variable that will serve as sink for all waste
+      type (type_bottom_state_variable_id)                      :: id_landings           ! State variable that will serve as sink for all landed biomass
       type (type_horizontal_diagnostic_variable_id)             :: id_total_reproduction ! Total reproduction
       type (type_horizontal_diagnostic_variable_id)             :: id_R_p                ! Density-independent recruitment
       type (type_horizontal_diagnostic_variable_id)             :: id_R                  ! Density-dependent recruitment
@@ -114,7 +115,7 @@ contains
    real(rk)           :: z0pre,z0exp,w_s,z_s
    real(rk)           :: kappa,lambda
    real(rk)           :: T_ref
-   real(rk)           :: S1,S2,F
+   real(rk)           :: S1,S2,F,w_minF
    integer            :: z0_type
    character(len=10)  :: strindex
    real(rk),parameter :: pi = 4*atan(1.0_rk)
@@ -125,8 +126,8 @@ contains
    ! Read parameters
    ! All rate coefficients are converted from d-1 to s-1 ensure source terms are directly compatible with FABM.
    ! Default values taken from Table S5
-   call self%get_parameter(self%nclass,'nclass', '-',    'number of size classes', default=100)
-   call self%get_parameter(self%nprey, 'nprey',  '-',    'number of prey')
+   call self%get_parameter(self%nclass,'nclass', '',     'number of size classes', default=100)
+   call self%get_parameter(self%nprey, 'nprey',  '',     'number of prey')
    call self%get_parameter(self%alpha, 'alpha',  '-',    'assimilation efficiency',            default=0.6_rk,   minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(self%erepro,'erepro', '-',    'reproductive efficiency',            default=1.0_rk,   minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(self%w_min, 'w_min',  'g',    'egg weight',                         default=0.001_rk, minimum=0.0_rk)
@@ -154,6 +155,8 @@ contains
    case (2)
       call self%get_parameter(self%R_max, 'R_max','# yr-1','maximum recruitment flux', minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    end select
+
+   call self%get_parameter(w_minF,     'w_minF',     'g',        'minimum weight for fishing selectivity',        default=0.0_rk, minimum=0.0_rk)
    call self%get_parameter(S1,         'S1',         '-',        'offset for fishing selectivity exponent',       default=0.0_rk, minimum=0.0_rk)
    call self%get_parameter(S2,         'S2',         'g-1',      'scale factor for fishing selectivity exponent', default=0.0_rk, minimum=0.0_rk)
    call self%get_parameter(F,          'F',          'yr-1',     'fishing effort',                                default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
@@ -210,7 +213,10 @@ contains
       self%mu_b(:) = z0pre*self%w**z0exp
    end select
    if (w_s>0.0_rk) self%mu_b = self%mu_b + 0.2/sec_per_year*(self%w/w_s)**z_s  ! Blanchard et al. 10.1098/rstb.2012.0231 Table S1
-   self%F(:) = F/(1+exp(S1-S2*self%w))  ! fishing mortality [s-1]; Eqs M13 and M14 combined
+   self%F = 0.0_rk
+   do iclass=1,self%nclass
+      if (self%w(iclass)>w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))  ! fishing mortality [s-1]; Eqs M13 and M14 combined
+   end do
    if (w_mat==0.0_rk) then
       ! No explicit reproduction as in original Blanchard community size spectrum model. Recruitment will be constant.
       self%psi(:) = 0
@@ -275,6 +281,8 @@ contains
    ! Register a state variable for waste (faeces, maintenance, dead matter resulting from non-predation mortality, fraction of offspring that does not survive)
    call self%register_bottom_state_variable(self%id_waste,'waste','g m-2','target variable for faeces')
    call self%add_to_aggregate_variable(total_mass,self%id_waste)
+   call self%register_bottom_state_variable(self%id_landings,'landings','g m-2','target variable for landings')
+   call self%add_to_aggregate_variable(total_mass,self%id_landings)
 
    ! Register diagnostic for total offspring production across population.
    call self%register_diagnostic_variable(self%id_total_reproduction,'total_reproduction','g m-2 d-1','total reproduction',source=source_do_bottom)
@@ -379,7 +387,7 @@ contains
 #endif
 
          ! Initialize size-class-specific mortality (s-1) with precomputed size-dependent background value.
-         mu = self%mu_b + self%F
+         mu = self%mu_b
 
          ! Individual physiology (per size class)
          do iclass=1,self%nclass
@@ -433,7 +441,7 @@ contains
          ! Transfer size-class-specific source terms and diagnostics to FABM
          do iclass=1,self%nclass
             ! Apply specific mortality (s-1) to size-class-specific abundances and apply upwind advection - this is a time-explicit version of Eq G.1 of Hartvig et al.
-            _SET_BOTTOM_ODE_(self%id_Nw(iclass),-mu(iclass)*Nw(iclass) + (nflux(iclass-1)-nflux(iclass))*self%w(iclass))
+            _SET_BOTTOM_ODE_(self%id_Nw(iclass),-(mu(iclass) + self%F(iclass))*Nw(iclass) + (nflux(iclass-1)-nflux(iclass))*self%w(iclass))
 
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g(iclass),g(iclass)*86400)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_reproduction(iclass),reproduction(iclass)*86400)
@@ -443,6 +451,7 @@ contains
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R_p,R_p*86400)
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R,R*86400)
          _SET_BOTTOM_ODE_(self%id_waste,sum(((1-self%alpha)*I + maintenance + mu)*Nw) + total_reproduction - R*self%w_min + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass)))
+         _SET_BOTTOM_ODE_(self%id_landings,sum(self%F*Nw))
       _HORIZONTAL_LOOP_END_
 
    end subroutine do_bottom
