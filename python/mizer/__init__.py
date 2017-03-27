@@ -18,14 +18,15 @@ except ImportError:
 import datasources
 
 class Prey(object):
-    def __init__(self, name, mass, value_provider):
+    def __init__(self, name, mass, value):
         self.name = name
         self.mass = mass
-        self.value_provider = value_provider
-        assert isinstance(value_provider, datasources.ValueProvider)
+        if not isinstance(value, datasources.ValueProvider):
+            value = datasources.Constant(value)
+        self.value_provider = value
 
 class Mizer(object):
-    def __init__(self, path=os.path.join(os.path.dirname(__file__), 'mizer.yaml'), prey=(), parameters={}, temperature_provider=None):
+    def __init__(self, path=os.path.join(os.path.dirname(__file__), 'mizer.yaml'), prey=(), parameters={}, temperature=None):
         with open(path, 'rU') as f:
             configuration = yaml.load(f)
 
@@ -78,7 +79,9 @@ class Mizer(object):
         # Used to convert between depth-integrated fluxes and depth-explicit fluxes (not used if prey is prescribed)
         self.fabm_model.findDependency('bottom_depth').value = 1.
 
-        self.temperature_provider = temperature_provider
+        if temperature is not None and not isinstance(temperature, datasources.ValueProvider):
+            temperature = datasources.Constant(temperature)
+        self.temperature_provider = temperature
         if self.temperature_provider is None and 'temperature' in configuration:
             self.temperature_provider = datasources.Constant(configuration['temperature']['constant_value'])
         if self.temperature_provider is not None:
@@ -103,7 +106,7 @@ class Mizer(object):
             return self.fabm_model.getRates()
 
         # Time-integrate (note: FABM's internal time unit is seconds!)
-        if spinup>0:
+        if spinup > 0:
             in_spinup = True
             t_spinup = numpy.arange(t[0]-365.23*spinup, t[0], 1.)
             for i, prey_item in zip(self.prey_indices, self.prey_items):
@@ -134,21 +137,31 @@ class MizerResult(object):
             fig = pyplot.figure()
         ax = fig.gca()
         style = '.' if normalization == 0 else '-'
+        prey_masses, prey_values, lines = None, None, []
         if normalization == 0:
             values = self.spectrum
-            ax.set_ylabel('wet mass (g)')  
+            ax.set_ylabel('wet mass (g)')
+            prey_masses = numpy.array([prey_item.mass for prey_item in self.model.prey_items])
+            prey_values = numpy.array([prey_item.value_provider.get(self.t[itime]) for prey_item in self.model.prey_items])
         elif normalization == 1:
             values = self.biomass_density
-            ax.set_ylabel('wet mass density (g/g)')  
+            ax.set_ylabel('wet mass density (g/g)')
         elif normalization == 2:
             values = self.abundance_density
-            ax.set_ylabel('abundance density (#/g)')  
+            ax.set_ylabel('abundance density (#/g)')
         if global_range:
-            ax.set_ylim(values.min()/10, values.max()*10)
+            minval, maxval = values.min(), values.max()
+            if prey_masses is not None:
+                minval, maxval = min(minval, prey_values.min()), max(maxval, prey_values.max())
+            ax.set_ylim(minval/10, maxval*10)
+        if prey_masses is not None:
+            line, = ax.loglog(prey_masses, prey_values, '.')
+            lines.append(line)
         line, = ax.loglog(self.model.bin_masses, values[itime, :], style)
+        lines.append(line)
         ax.grid(True)
         ax.set_xlabel('wet mass (g)')
-        return line
+        return lines
 
     def plot_biomass_timeseries(self, fig=None):
         if fig is None:
@@ -158,6 +171,7 @@ class MizerResult(object):
         ax.set_xlabel('time (d)')
         ax.set_ylabel('biomass (%s)' % self.model.fabm_model.state_variables[self.model.bin_indices[0]].units)
         ax.grid(True)
+        return line,
 
     def plot_timeseries(self, name, fig=None):
         for i, variable in enumerate(self.model.fabm_model.state_variables):
@@ -172,19 +186,26 @@ class MizerResult(object):
         ax.set_xlabel('time (d)')
         ax.set_ylabel('%s (%s)' % (self.model.fabm_model.state_variables[i].long_name, self.model.fabm_model.state_variables[i].units))
         ax.grid(True)
+        return line,
 
     def animate_spectrum(self, dir='.', normalization=0):
         fig = pyplot.figure()
-        line = self.plot_spectrum(0, fig=fig, normalization=normalization, global_range=True)
+        lines = self.plot_spectrum(0, fig=fig, normalization=normalization, global_range=True)
+        prey_values = None
         if normalization == 0:
             values = self.spectrum
+            prey_values = numpy.empty((len(self.t), len(self.model.prey_items)))
+            for iprey, prey_item in enumerate(self.model.prey_items):
+                prey_values[:, iprey] = prey_item.value_provider.get(self.t)
         elif normalization == 1:
             values = self.biomass_density
         elif normalization == 2:
             values = self.abundance_density
         def new_frame(itime):
-            line.set_ydata(values[itime, :])
-            return line,
+            if prey_values is not None:
+                lines[0].set_ydata(prey_values[itime, :])
+            lines[-1].set_ydata(values[itime, :])
+            return lines
         return animation.FuncAnimation(fig, new_frame, frames=self.spectrum.shape[0], interval=1000./30)
 
 if __name__ == '__main__':
