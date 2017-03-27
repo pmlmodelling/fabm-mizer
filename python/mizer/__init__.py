@@ -7,6 +7,7 @@ import scipy.integrate
 from matplotlib import pyplot
 from matplotlib import animation
 import yaml
+from matplotlib.dates import num2date
 
 try:
     import pyfabm
@@ -110,11 +111,11 @@ class Mizer(object):
             if self.temperature is not None:
                 self.temperature.value = self.temperature_provider.mean()
             if verbose:
-                print('Spinning up from %s to %s d' % (t_spinup[0], t_spinup[-1]))
+                print('Spinning up from %s to %s d' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
             y = scipy.integrate.odeint(dy, self.fabm_model.state, t_spinup*86400)
 
         if verbose:
-            print('Time integrating from %s to %s d' % (t[0], t[-1]))
+            print('Time integrating from %s to %s d' % (num2date(t[0]), num2date(t[-1])))
         in_spinup = False
         y = scipy.integrate.odeint(dy, self.fabm_model.state, t*86400)
         return MizerResult(self, t, y)
