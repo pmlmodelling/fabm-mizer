@@ -207,8 +207,8 @@ class MizerResult(object):
         if normalization == 0:
             values = self.spectrum
             prey_values = numpy.empty((len(self.t), len(self.model.prey_items)))
-            for iprey in self.model.prey_indices:
-                prey_values[:, iprey] = self.y[:, iprey]
+            for i, iprey in enumerate(self.model.prey_indices):
+                prey_values[:, i] = self.y[:, iprey]
         elif normalization == 1:
             values = self.biomass_density
         elif normalization == 2:
