@@ -38,7 +38,7 @@ class Mizer(object):
 
         self.prey_items = list(prey)
         for name, data in configuration.get('prey', {}):
-            self.prey_items.append(Prey(name, data['wet_mass'], datasources.Constant(data['constant_value'])))
+            self.prey_items.append(Prey(name, data['wet_mass'], data['constant_value']))
 
         iprey = 1
         for prey_item in self.prey_items:
@@ -95,17 +95,18 @@ class Mizer(object):
             if parameter.path.startswith('fish/'):
                 print('%s: %s %s' % (parameter.long_name, parameter.value, parameter.units))
 
-    def run(self, t, verbose=False, spinup=0):
+    def run(self, t, verbose=False, spinup=0, save_spinup=False):
         def dy(y, current_time):
             self.fabm_model.state[:] = y
-            if not in_spinup:
+            if in_spinup:
                 for i, prey_item in zip(self.prey_indices, self.prey_items):
                     self.fabm_model.state[i] = prey_item.value_provider.get(current_time)
                 if self.temperature is not None:
                     self.temperature.value = self.temperature_provider.get(current_time)
-            return self.fabm_model.getRates()
+            return self.fabm_model.getRates()*86400
 
-        # Time-integrate (note: FABM's internal time unit is seconds!)
+        # Spin up with time-averaged prey abundances
+        t_spinup, y_spinup = None, None
         if spinup > 0:
             in_spinup = True
             t_spinup = numpy.arange(t[0]-365.23*spinup, t[0], 1.)
@@ -115,12 +116,23 @@ class Mizer(object):
                 self.temperature.value = self.temperature_provider.mean()
             if verbose:
                 print('Spinning up from %s to %s d' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
-            y = scipy.integrate.odeint(dy, self.fabm_model.state, t_spinup*86400)
+            y_spinup = scipy.integrate.odeint(dy, self.fabm_model.state, t_spinup)
+            for i, prey_item in zip(self.prey_indices, self.prey_items):
+                y_spinup[:, i] = prey_item.value_provider.mean()
 
         if verbose:
             print('Time integrating from %s to %s d' % (num2date(t[0]), num2date(t[-1])))
         in_spinup = False
-        y = scipy.integrate.odeint(dy, self.fabm_model.state, t*86400)
+        y = scipy.integrate.odeint(dy, self.fabm_model.state, t)
+
+        # Overwrite prey masses with imposed values.
+        for i, prey_item in zip(self.prey_indices, self.prey_items):
+            y[:, i] = prey_item.value_provider.get(t)
+
+        if spinup > 0 and save_spinup:
+            t = numpy.hstack((t_spinup, t))
+            y = numpy.vstack((y_spinup, y))
+
         return MizerResult(self, t, y)
 
 class MizerResult(object):
@@ -142,7 +154,7 @@ class MizerResult(object):
             values = self.spectrum
             ax.set_ylabel('wet mass (g)')
             prey_masses = numpy.array([prey_item.mass for prey_item in self.model.prey_items])
-            prey_values = numpy.array([prey_item.value_provider.get(self.t[itime]) for prey_item in self.model.prey_items])
+            prey_values = self.y[itime, self.model.prey_indices]
         elif normalization == 1:
             values = self.biomass_density
             ax.set_ylabel('wet mass density (g/g)')
@@ -195,8 +207,8 @@ class MizerResult(object):
         if normalization == 0:
             values = self.spectrum
             prey_values = numpy.empty((len(self.t), len(self.model.prey_items)))
-            for iprey, prey_item in enumerate(self.model.prey_items):
-                prey_values[:, iprey] = prey_item.value_provider.get(self.t)
+            for iprey in self.model.prey_indices:
+                prey_values[:, iprey] = self.y[:, iprey]
         elif normalization == 1:
             values = self.biomass_density
         elif normalization == 2:
