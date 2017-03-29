@@ -62,3 +62,8 @@ class TimeSeries(ValueProvider):
         ax.plot_date(self.times, self.data, '-')
         ax.grid()
         ax.set_ylabel('%s (g WM/m3)' % (self.long_name,))
+
+def asValueProvider(value):
+    if not isinstance(value, ValueProvider):
+        value = Constant(value)
+    return value
