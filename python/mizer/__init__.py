@@ -229,7 +229,8 @@ class MizerResult(object):
         lines.append(line)
         ax.grid(True)
         ax.set_xlabel('wet mass (g)')
-        return lines
+        title = ax.set_title(num2date(self.t[itime]).strftime('%Y-%m-%d'))
+        return tuple(lines) + (title,)
 
     def plot_biomass_timeseries(self, fig=None):
         if fig is None:
@@ -258,7 +259,8 @@ class MizerResult(object):
 
     def animate_spectrum(self, dir='.', normalization=0):
         fig = pyplot.figure()
-        lines = self.plot_spectrum(0, fig=fig, normalization=normalization, global_range=True)
+        objects = self.plot_spectrum(0, fig=fig, normalization=normalization, global_range=True)
+        lines, title = objects[:-1], objects[-1]
         prey_values = None
         if normalization == 0:
             values = self.spectrum
@@ -271,8 +273,9 @@ class MizerResult(object):
             if prey_values is not None:
                 lines[0].set_ydata(prey_values[itime, :])
             lines[-1].set_ydata(values[itime, :])
-            return lines
-        return animation.FuncAnimation(fig, new_frame, frames=self.spectrum.shape[0], interval=1000./30)
+            title.set_text(num2date(self.t[itime]).strftime('%Y-%m-%d'))
+            return objects
+        return animation.FuncAnimation(fig, new_frame, frames=self.spectrum.shape[0], interval=1000./30, blit=True)
 
 if __name__ == '__main__':
     # Time-integrate over 200 days (note: FABM's internal time unit is seconds!)
