@@ -5,9 +5,10 @@ import os.path
 import yaml
 import numpy
 import scipy.integrate
+import datetime
 from matplotlib import pyplot
 from matplotlib import animation
-from matplotlib.dates import num2date
+from matplotlib.dates import num2date, date2num
 
 try:
     import pyfabm
@@ -256,6 +257,43 @@ class MizerResult(object):
         ax.set_ylabel('%s (%s)' % (self.model.fabm_model.state_variables[i].long_name, self.model.fabm_model.state_variables[i].units))
         ax.grid(True)
         return line,
+
+    def plot_annual_mean(self, name, fig=None, plot_change=False):
+        for i, variable in enumerate(self.model.fabm_model.state_variables):
+            if variable.path == 'fish/%s' % name:
+                break
+        else:
+            raise Exception('Variable "%s" not found in mizer output' % name)
+        all_data = self.y[:, i]
+
+        start_year, stop_year = num2date(self.t[0]).year, num2date(self.t[-1]).year
+        year_bounds = [date2num(datetime.datetime(year, 1, 1, 0, 0, 0)) for year in range(start_year, stop_year+1)]
+        if year_bounds[0] < self.t[0]:
+            year_bounds.pop(0)
+            start_year += 1
+        #print('Years completely spanned by simulation: %i - %i' % (start_year, stop_year-1))
+        year_data = numpy.empty((stop_year - start_year))
+        istart = 0
+        for iyear in range(year_data.size):
+            istop = self.t.searchsorted(year_bounds[iyear+1])
+            if plot_change:
+                year_data[iyear] = all_data[min(istop, self.t.size-1)] - all_data[istart]
+            else:
+                year_data[iyear] = all_data[istart:istop].mean()
+            istart = istop
+
+        if fig is None:
+            fig = pyplot.figure()
+        ax = fig.gca()
+        bars = ax.bar(numpy.arange(start_year, stop_year), year_data, align='center')
+        ax.set_xlabel('year')
+        ax.get_xaxis().get_major_formatter().set_useOffset(False)
+        if plot_change:
+            ax.set_ylabel('change in %s (%s)' % (self.model.fabm_model.state_variables[i].long_name, self.model.fabm_model.state_variables[i].units))
+        else:
+            ax.set_ylabel('annual mean %s (%s)' % (self.model.fabm_model.state_variables[i].long_name, self.model.fabm_model.state_variables[i].units))
+        ax.grid(True, axis='y')
+        return bars
 
     def animate_spectrum(self, dir='.', normalization=0):
         fig = pyplot.figure()
