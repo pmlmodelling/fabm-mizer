@@ -158,20 +158,22 @@ class Mizer(object):
                 self.fabm_model.state[self.prey_indices] = self.prey.getValues(current_time)
                 if self.temperature is not None:
                     self.temperature.value = self.temperature_provider.get(current_time)
+            else:
+                self.fabm_model.state[self.prey_indices] = mean_prey
             return self.fabm_model.getRates()*86400
 
         # Spin up with time-averaged prey abundances
         t_spinup, y_spinup = None, None
         if spinup > 0:
             in_spinup = True
-            t_spinup = numpy.arange(t[0]-365.23*spinup, t[0], 1.)
-            self.fabm_model.state[self.prey_indices] = self.prey.getMean()
+            t_spinup = t[0] - numpy.arange(0., 365.23*spinup, 1.)[::-1]
+            mean_prey = self.prey.getMean()
             if self.temperature is not None:
                 self.temperature.value = self.temperature_provider.mean()
             if verbose:
                 print('Spinning up from %s to %s' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
             y_spinup = scipy.integrate.odeint(dy, self.fabm_model.state, t_spinup)
-            y_spinup[:, self.prey_indices] = self.prey.getMean()
+            y_spinup[:, self.prey_indices] = mean_prey
 
         if verbose:
             print('Time integrating from %s to %s' % (num2date(t[0]), num2date(t[-1])))
@@ -182,8 +184,9 @@ class Mizer(object):
         y[:, self.prey_indices] = self.prey.getValues(t)
 
         if spinup > 0 and save_spinup:
-            t = numpy.hstack((t_spinup, t))
-            y = numpy.vstack((y_spinup, y))
+            # Prepend spinup to results
+            t = numpy.hstack((t_spinup[:-1], t))
+            y = numpy.vstack((y_spinup[:-1, :], y))
 
         if verbose:
             print('Done.')
