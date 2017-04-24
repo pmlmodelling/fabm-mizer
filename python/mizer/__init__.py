@@ -151,6 +151,8 @@ class Mizer(object):
             if parameter.path.startswith('fish/'):
                 print('%s: %s %s' % (parameter.long_name, parameter.value, parameter.units))
 
+        self.initial_state = numpy.copy(self.fabm_model.state)
+
     def run(self, t, verbose=False, spinup=0, save_spinup=False):
         def dy(y, current_time):
             self.fabm_model.state[:] = y
@@ -158,22 +160,23 @@ class Mizer(object):
                 self.fabm_model.state[self.prey_indices] = self.prey.getValues(current_time)
                 if self.temperature is not None:
                     self.temperature.value = self.temperature_provider.get(current_time)
-            else:
-                self.fabm_model.state[self.prey_indices] = mean_prey
-            return self.fabm_model.getRates()*86400
+            rates = self.fabm_model.getRates()*86400
+            rates[self.prey_indices] = 0.
+            return rates
+
+        self.fabm_model.state[:] = self.initial_state
 
         # Spin up with time-averaged prey abundances
         t_spinup, y_spinup = None, None
         if spinup > 0:
             in_spinup = True
             t_spinup = t[0] - numpy.arange(0., 365.23*spinup, 1.)[::-1]
-            mean_prey = self.prey.getMean()
+            self.fabm_model.state[self.prey_indices] = self.prey.getMean()
             if self.temperature is not None:
                 self.temperature.value = self.temperature_provider.mean()
             if verbose:
                 print('Spinning up from %s to %s' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
             y_spinup = scipy.integrate.odeint(dy, self.fabm_model.state, t_spinup)
-            y_spinup[:, self.prey_indices] = mean_prey
             self.fabm_model.state[:] = y_spinup[-1, :]
 
         if verbose:
