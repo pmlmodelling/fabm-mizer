@@ -269,11 +269,12 @@ class MizerResult(object):
             values = self.biomass_density
         elif normalization == 2:
             values = self.abundance_density
+        dates = num2date(self.t)
         def new_frame(itime):
             if prey_values is not None:
                 lines[0].set_ydata(prey_values[itime, :])
             lines[-1].set_ydata(values[itime, :])
-            title.set_text(num2date(self.t[itime]).strftime('%Y-%m-%d'))
+            title.set_text(dates[itime].strftime('%Y-%m-%d'))
             return objects
         return animation.FuncAnimation(fig, new_frame, frames=self.spectrum.shape[0], interval=1000./30, blit=True)
 
