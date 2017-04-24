@@ -174,6 +174,7 @@ class Mizer(object):
                 print('Spinning up from %s to %s' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
             y_spinup = scipy.integrate.odeint(dy, self.fabm_model.state, t_spinup)
             y_spinup[:, self.prey_indices] = mean_prey
+            self.fabm_model.state[:] = y_spinup[-1, :]
 
         if verbose:
             print('Time integrating from %s to %s' % (num2date(t[0]), num2date(t[-1])))
