@@ -56,8 +56,8 @@ class GriddedPreyCollection(BasePreyCollection):
             min_prey_mass = current_min if min_prey_mass is None else min(min_prey_mass, current_min)
             current_max = prey_item.mass if isinstance(prey_item.mass, float) else prey_item.mass[1]
             max_prey_mass = current_max if max_prey_mass is None else max(max_prey_mass, current_max)
-        delta_log10mass = 0.1
-        prey_mass_bounds = numpy.arange(numpy.log10(min_prey_mass)-delta_log10mass/2, numpy.log10(max_prey_mass)+delta_log10mass/2, delta_log10mass)
+        self.delta_log10mass = 0.1
+        prey_mass_bounds = numpy.arange(numpy.log10(min_prey_mass)-self.delta_log10mass/2, numpy.log10(max_prey_mass)+self.delta_log10mass, self.delta_log10mass)
         prey_mass_centers = (prey_mass_bounds[1:]+prey_mass_bounds[:-1])/2
         self.prey_bin_weights = []
         for prey_item in self.source.items:
@@ -90,7 +90,7 @@ class GriddedPreyCollection(BasePreyCollection):
         return result
 
 class Mizer(object):
-    def __init__(self, parameters={}, prey=(), temperature=None):
+    def __init__(self, parameters={}, prey=(), temperature=None, recruitment_from_prey=False):
         fabm_yaml_path = 'fabm.yaml'
         mizer_params = dict(parameters)
         mizer_coupling = {'waste': 'zero_hz'}
@@ -132,8 +132,8 @@ class Mizer(object):
             self.bin_indices.append(i)
         self.bin_masses = numpy.array(self.bin_masses)
         log10masses = numpy.log10(self.bin_masses)
-        log10bin_width = log10masses[1] - log10masses[0]   # assume equal log10 spacing between mizer size classes
-        self.bin_widths = 10.**(log10masses+log10bin_width/2) - 10.**(log10masses-log10bin_width/2)
+        self.log10bin_width = log10masses[1] - log10masses[0]   # assume equal log10 spacing between mizer size classes
+        self.bin_widths = 10.**(log10masses+self.log10bin_width/2) - 10.**(log10masses-self.log10bin_width/2)
 
         # Used to convert between depth-integrated fluxes and depth-explicit fluxes (not used if prey is prescribed)
         self.fabm_model.findDependency('bottom_depth').value = 1.
@@ -152,40 +152,57 @@ class Mizer(object):
                 print('%s: %s %s' % (parameter.long_name, parameter.value, parameter.units))
 
         self.initial_state = numpy.copy(self.fabm_model.state)
+        self.recruitment_from_prey = recruitment_from_prey
 
     def run(self, t, verbose=False, spinup=0, save_spinup=False):
+        # Shortcuts to objects used during time integration
+        state = self.fabm_model.state
+        getRates = self.fabm_model.getRates
+
+        # Build list of indices of state variables that must be kept constant.
+        iconstant_states = set(self.prey_indices)
+        if self.recruitment_from_prey:
+            iconstant_states.add(self.bin_indices[0])
+        iconstant_states = list(sorted(iconstant_states))
+
         def dy(y, current_time):
-            self.fabm_model.state[:] = y
+            state[:] = y
             if not in_spinup:
-                self.fabm_model.state[self.prey_indices] = self.prey.getValues(current_time)
+                state[self.prey_indices] = self.prey.getValues(current_time)
                 if self.temperature is not None:
                     self.temperature.value = self.temperature_provider.get(current_time)
-            rates = self.fabm_model.getRates()*86400
-            rates[self.prey_indices] = 0.
+                if self.recruitment_from_prey:
+                    state[self.bin_indices[0]] = state[self.prey_indices].mean()*self.log10bin_width/self.prey.delta_log10mass
+            rates = getRates()*86400
+            rates[iconstant_states] = 0.
             return rates
 
-        self.fabm_model.state[:] = self.initial_state
+        state[:] = self.initial_state
 
         # Spin up with time-averaged prey abundances
         t_spinup, y_spinup = None, None
         if spinup > 0:
             in_spinup = True
             t_spinup = t[0] - numpy.arange(0., 365.23*spinup, 1.)[::-1]
-            self.fabm_model.state[self.prey_indices] = self.prey.getMean()
+            state[self.prey_indices] = self.prey.getMean()
+            if self.recruitment_from_prey:
+                state[self.bin_indices[0]] = state[self.prey_indices].mean()*self.log10bin_width/self.prey.delta_log10mass
             if self.temperature is not None:
                 self.temperature.value = self.temperature_provider.mean()
             if verbose:
                 print('Spinning up from %s to %s' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
-            y_spinup = scipy.integrate.odeint(dy, self.fabm_model.state, t_spinup)
-            self.fabm_model.state[:] = y_spinup[-1, :]
+            y_spinup = scipy.integrate.odeint(dy, state, t_spinup)
+            state[:] = y_spinup[-1, :]
 
         if verbose:
             print('Time integrating from %s to %s' % (num2date(t[0]), num2date(t[-1])))
         in_spinup = False
-        y = scipy.integrate.odeint(dy, self.fabm_model.state, t)
+        y = scipy.integrate.odeint(dy, state, t)
 
         # Overwrite prey masses with imposed values.
         y[:, self.prey_indices] = self.prey.getValues(t)
+        if self.recruitment_from_prey:
+            y[:, self.bin_indices[0]] = y[:, self.prey_indices].mean(axis=1)*self.log10bin_width/self.prey.delta_log10mass
 
         if spinup > 0 and save_spinup:
             # Prepend spinup to results
@@ -240,13 +257,36 @@ class MizerResult(object):
         title = ax.set_title(num2date(self.t[itime]).strftime('%Y-%m-%d'))
         return tuple(lines) + (title,)
 
-    def plot_biomass_timeseries(self, fig=None):
+    def get_biomass_timeseries(self, min_weight=None, max_weight=None):
+        istart = 0
+        if min_weight is not None:
+            istart = self.model.bin_masses.searchsorted(min_weight)
+        istop = self.spectrum.shape[1]
+        if max_weight is not None:
+            istop = self.model.bin_masses.searchsorted(max_weight)
+        return self.spectrum[:, istart:istop].sum(axis=1)
+
+    def get_lfi_timeseries(self, lfi_weight, min_weight=None):
+        assert min_weight is None or min_weight < lfi_weight
+        return self.get_biomass_timeseries(lfi_weight)/self.get_biomass_timeseries(min_weight)
+
+    def plot_biomass_timeseries(self, min_weight=None, max_weight=None, fig=None):
         if fig is None:
             fig = pyplot.figure()
         ax = fig.gca()
-        line, = ax.plot_date(self.t, self.spectrum[:, :].sum(axis=1), '-')
+        line, = ax.plot_date(self.t, self.get_biomass_timeseries(min_weight, max_weight), '-')
         ax.set_xlabel('time (d)')
         ax.set_ylabel('biomass (%s)' % self.model.fabm_model.state_variables[self.model.bin_indices[0]].units)
+        ax.grid(True)
+        return line,
+
+    def plot_lfi_timeseries(self, lfi_weight, min_weight=None, fig=None):
+        if fig is None:
+            fig = pyplot.figure()
+        ax = fig.gca()
+        line, = ax.plot_date(self.t, self.get_lfi_timeseries(lfi_weight, min_weight), '-')
+        ax.set_xlabel('time (d)')
+        ax.set_ylabel('fraction of popluation > %s g WM' % lfi_weight)
         ax.grid(True)
         return line,
 
