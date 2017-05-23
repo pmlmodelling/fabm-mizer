@@ -212,7 +212,7 @@ contains
    case (1)
       self%mu_b(:) = z0pre*self%w**z0exp
    end select
-   if (w_s>0.0_rk) self%mu_b = self%mu_b + 0.2/sec_per_year*(self%w/w_s)**z_s  ! Blanchard et al. 10.1098/rstb.2012.0231 Table S1
+   if (w_s>0.0_rk) self%mu_b = self%mu_b + 0.2_rk/sec_per_year*(self%w/w_s)**z_s  ! Blanchard et al. 10.1098/rstb.2012.0231 Table S1
    self%F = 0.0_rk
    do iclass=1,self%nclass
       if (self%w(iclass)>w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))  ! fishing mortality [s-1]; Eqs M13 and M14 combined
@@ -236,7 +236,12 @@ contains
    write (*,*) '  @ minimum weight:',self%std_metab(1)*sec_per_year
    write (*,*) '  @ maximum weight:',self%std_metab(self%nclass)*sec_per_year
    write (*,*) 'Background mortality (yr-1):'
-   write (*,*) '  @ weight = 1:',z0*sec_per_year,'(z0)'
+   select case (z0_type)
+   case (0)
+      write (*,*) '  @ weight = 1:',z0*sec_per_year,'(z0)'
+   case (1)
+      write (*,*) '  @ weight = 1:',z0pre*sec_per_year,'(z0pre)'
+   end select
    write (*,*) '  @ minimum weight:',self%mu_b(1)*sec_per_year
    write (*,*) '  @ maximum weight:',self%mu_b(self%nclass)*sec_per_year
    write (*,*) 'Fishing mortality at minimum size:',self%F(1)*sec_per_year,'yr-1'
