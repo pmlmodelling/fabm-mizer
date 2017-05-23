@@ -27,28 +27,46 @@ class Constant(ValueProvider):
         return self.value
 
 class TimeSeries(ValueProvider):
-    def __init__(self, path, variable_name, scale_factor=1.0, **dim2index):
+    def __init__(self, path, variable_name, scale_factor=1.0, weights=None, plot=False, **dim2index):
         ValueProvider.__init__(self)
         with netCDF4.Dataset(path) as nc:
             ncvar = nc.variables[variable_name]
             self.data = ncvar[...]*scale_factor
-            self.units = ncvar.units
             self.long_name = ncvar.long_name
+            self.units = ncvar.units
+            if scale_factor != 1.0:
+                self.units = '%s*%s' % (scale_factor, self.units)
+            if weights is not None:
+                ncweights = nc.variables[weights]
+                weight_values = ncweights[...]
+                self.data *= weight_values
+                self.units = '%s*%s' % (self.units, ncweights.units)
             for idim in range(ncvar.ndim-1, -1, -1):
                 dimname = ncvar.dimensions[idim]
                 if ncvar.shape[idim] == 1:
                     slc = [slice(None)]*self.data.ndim
                     slc[idim] = 0
                     self.data = self.data[slc]
+                    if weights is not None:
+                        weight_values = weight_values[slc]
                 elif dimname in dim2index:
-                    slc = [slice(None)]*self.data.ndim
-                    slc[idim] = dim2index[dimname]
-                    self.data = self.data[slc]
+                    if dim2index[dimname] == 'mean':
+                        if weights is not None:
+                            self.data = self.data.sum(axis=idim)/weight_values.sum(axis=idim)
+                        else:
+                            self.data = self.data.mean(axis=idim)
+                    elif dim2index[dimname] == 'sum':
+                        self.data = self.data.sum(axis=idim)
+                    else:
+                        slc = [slice(None)]*self.data.ndim
+                        slc[idim] = dim2index[dimname]
+                        self.data = self.data[slc]
                 elif dimname != 'time':
-                    self.data = self.data.mean(axis=idim)
+                    assert False, 'No index (or "sum", "mean") provided for dimension %s' % dimname
             nctime = nc.variables['time']
             self.times = date2num(netCDF4.num2date(nctime[:], nctime.units))
-        self.plot()
+        if plot:
+            self.plot()
 
     def get(self, time):
         return numpy.interp(time, self.times, self.data)
@@ -61,7 +79,7 @@ class TimeSeries(ValueProvider):
         ax = fig.gca()
         ax.plot_date(self.times, self.data, '-')
         ax.grid()
-        ax.set_ylabel('%s (g WM/m3)' % (self.long_name,))
+        ax.set_ylabel('%s (%s)' % (self.long_name, self.units))
 
 def asValueProvider(value):
     if not isinstance(value, ValueProvider):
