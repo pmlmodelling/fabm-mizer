@@ -7,7 +7,21 @@ To include mizer modules during a FABM build, add the following to your call to 
 Here, `<OTHER_MODELS>` is a semi-colon-separated list of additional FABM packages you want to build, e.g., ersem (quotes are _required_ to prevent your shell (e.g., bash)
 from interpreting the semi-colon as "end of command"). `<MIZERDIR>` is the root of the mizer repository.
 
-For instance, on Linux you can build FABM's 0d driver with mizer and ERSEM support as follows:
+# pyfabm
+
+The tools to perform mizer simulations driven by existing outputs from lower trophic level (LTL) models
+are written in Python and available in the `python` subdirectory. To use these, you first need to build [pyfabm](https://github.com/fabm-model/fabm/wiki/python)
+(the Python interface to FABM).
+
+On Linux you can build pyfabm with mizer support as follows:
+
+    mkdir -p ~/build/pyfabm && cd ~/build/pyfabm
+    cmake <FABMDIR>/src/drivers/python -DFABM_INSTITUTES="mizer" -DFABM_MIZER_BASE=<MIZERDIR>
+    make install
+
+# stand-alone box model
+
+Similarly, you can build FABM's 0d driver with mizer and ERSEM support as follows:
 
     mkdir -p ~/build/fabm0d && cd ~/build/fabm0d
     cmake <FABMDIR>/src/drivers/0d -DGOTM_BASE=<GOTMDIR> -DFABM_INSTITUTES="ersem;mizer" -DFABM_ERSEM_BASE=<ERSEMDIR> -DFABM_MIZER_BASE=<MIZERDIR>
