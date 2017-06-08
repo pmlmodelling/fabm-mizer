@@ -84,6 +84,9 @@ for scenario_name in scenarios:
 
     biomass = result.get_biomass_timeseries()
 
+    # Write tab-separated text file with ERSEM and mizer variables.
+    # Depth-explicit ERSEM variables will be depth integrated.
+    # The selection of ERSEM variables thta is written is taken from "ersem_outputs", defined near the top of this file.
     with open('%s.dat' % scenario_name, 'w') as f, netCDF4.Dataset(gotm_result) as nc:
         f.write('date')
         ersem_data = []
