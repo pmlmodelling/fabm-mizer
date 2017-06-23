@@ -154,10 +154,12 @@ class Mizer(object):
         self.initial_state = numpy.copy(self.fabm_model.state)
         self.recruitment_from_prey = recruitment_from_prey
 
-    def run(self, t, verbose=False, spinup=0, save_spinup=False):
+    def run(self, t, verbose=False, spinup=0, save_spinup=False, initial_state=None):
         # Shortcuts to objects used during time integration
         state = self.fabm_model.state
         getRates = self.fabm_model.getRates
+        if initial_state is None:
+            initial_state = self.initial_state
 
         # Build list of indices of state variables that must be kept constant.
         iconstant_states = set(self.prey_indices)
@@ -177,7 +179,7 @@ class Mizer(object):
             rates[iconstant_states] = 0.
             return rates
 
-        state[:] = self.initial_state
+        state[:] = initial_state
 
         # Spin up with time-averaged prey abundances
         t_spinup, y_spinup = None, None
@@ -290,28 +292,27 @@ class MizerResult(object):
         ax.grid(True)
         return line,
 
-    def plot_timeseries(self, name, fig=None):
+    def get_timeseries(self, name):
         for i, variable in enumerate(self.model.fabm_model.state_variables):
             if variable.path == 'fish/%s' % name:
                 break
         else:
             raise Exception('Variable "%s" not found in mizer output' % name)
+        return variable, self.y[:, i]
+
+    def plot_timeseries(self, name, fig=None):
+        variable, data = self.get_timeseries(name)
         if fig is None:
             fig = pyplot.figure()
         ax = fig.gca()
-        line, = ax.plot_date(self.t, self.y[:, i], '-')
+        line, = ax.plot_date(self.t, data, '-')
         ax.set_xlabel('time (d)')
-        ax.set_ylabel('%s (%s)' % (self.model.fabm_model.state_variables[i].long_name, self.model.fabm_model.state_variables[i].units))
+        ax.set_ylabel('%s (%s)' % (variable.long_name, variable.units))
         ax.grid(True)
         return line,
 
     def plot_annual_mean(self, name, fig=None, plot_change=False):
-        for i, variable in enumerate(self.model.fabm_model.state_variables):
-            if variable.path == 'fish/%s' % name:
-                break
-        else:
-            raise Exception('Variable "%s" not found in mizer output' % name)
-        all_data = self.y[:, i]
+        variable, all_data = self.get_timeseries(name)
 
         start_year, stop_year = num2date(self.t[0]).year, num2date(self.t[-1]).year
         year_bounds = [date2num(datetime.datetime(year, 1, 1, 0, 0, 0)) for year in range(start_year, stop_year+1)]
@@ -336,9 +337,9 @@ class MizerResult(object):
         ax.set_xlabel('year')
         ax.get_xaxis().get_major_formatter().set_useOffset(False)
         if plot_change:
-            ax.set_ylabel('change in %s (%s)' % (self.model.fabm_model.state_variables[i].long_name, self.model.fabm_model.state_variables[i].units))
+            ax.set_ylabel('change in %s (%s)' % (variable.long_name, variable.units))
         else:
-            ax.set_ylabel('annual mean %s (%s)' % (self.model.fabm_model.state_variables[i].long_name, self.model.fabm_model.state_variables[i].units))
+            ax.set_ylabel('annual mean %s (%s)' % (variable.long_name, variable.units))
         ax.grid(True, axis='y')
         return bars
 
