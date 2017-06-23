@@ -30,10 +30,23 @@ class TimeSeries(ValueProvider):
     def __init__(self, path, variable_name, scale_factor=1.0, weights=None, plot=False, **dim2index):
         ValueProvider.__init__(self)
         with netCDF4.Dataset(path) as nc:
-            ncvar = nc.variables[variable_name]
-            self.data = ncvar[...]*scale_factor
-            self.long_name = ncvar.long_name
-            self.units = ncvar.units
+            if variable_name in nc.variables:
+                ncvar = nc.variables[variable_name]
+                self.data = ncvar[...]*scale_factor
+                self.long_name = ncvar.long_name
+                self.units = ncvar.units
+                dimensions = ncvar.dimensions
+            else:
+                namespace = {}
+                dimensions = None
+                for name, ncvar in nc.variables.items():
+                    if name in variable_name:
+                        namespace[name] = ncvar[...]
+                        assert dimensions is None or dimensions == ncvar.dimensions
+                        dimensions = ncvar.dimensions
+                self.data = eval(variable_name, namespace)*scale_factor
+                self.long_name = variable_name
+                self.units = 'unknown'
             if scale_factor != 1.0:
                 self.units = '%s*%s' % (scale_factor, self.units)
             if weights is not None:
@@ -41,9 +54,9 @@ class TimeSeries(ValueProvider):
                 weight_values = ncweights[...]
                 self.data *= weight_values
                 self.units = '%s*%s' % (self.units, ncweights.units)
-            for idim in range(ncvar.ndim-1, -1, -1):
-                dimname = ncvar.dimensions[idim]
-                if ncvar.shape[idim] == 1:
+            for idim in range(len(dimensions)-1, -1, -1):
+                dimname = dimensions[idim]
+                if self.data.shape[idim] == 1:
                     slc = [slice(None)]*self.data.ndim
                     slc[idim] = 0
                     self.data = self.data[slc]
