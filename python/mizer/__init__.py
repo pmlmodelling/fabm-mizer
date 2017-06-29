@@ -1,7 +1,9 @@
 from __future__ import print_function
 
 import sys
-import os.path
+import os
+import tempfile
+
 import yaml
 import numpy
 import scipy.integrate
@@ -91,7 +93,8 @@ class GriddedPreyCollection(BasePreyCollection):
 
 class Mizer(object):
     def __init__(self, parameters={}, prey=(), temperature=None, recruitment_from_prey=False):
-        fabm_yaml_path = 'fabm.yaml'
+        #fabm_yaml_path = 'fabm.yaml'
+        fabm_yaml_fd, fabm_yaml_path = tempfile.mkstemp()
         mizer_params = dict(parameters)
         mizer_coupling = {'waste': 'zero_hz'}
         mizer_yaml = {'model': 'mizer/size_structured_population', 'parameters': mizer_params, 'coupling': mizer_coupling}
@@ -107,10 +110,10 @@ class Mizer(object):
             fabm_yaml['instances'][name] = {'model': 'mizer/prey', 'parameters': {'w': float(mass)}}
             mizer_coupling['Nw_prey%i' % iprey] = '%s/Nw' % name
         mizer_params['nprey'] = iprey
-        with open(fabm_yaml_path, 'w') as f:
+        with os.fdopen(fabm_yaml_fd, 'w') as f:
             yaml.dump(fabm_yaml, f, default_flow_style=False)
 
-        self.fabm_model = pyfabm.Model('fabm.yaml')
+        self.fabm_model = pyfabm.Model(fabm_yaml_path)
 
         self.prey_indices = numpy.empty((iprey,), dtype=int)
         for iprey, name in enumerate(self.prey.names):
@@ -143,6 +146,7 @@ class Mizer(object):
             self.temperature_provider = datasources.asValueProvider(temperature)
             self.temperature = self.fabm_model.findDependency('temperature')
             self.temperature.value = self.temperature_provider.mean()
+            assert self.temperature.value > -10. and self.temperature.value < 40., 'Invalid temperature mean (%s)' % self.temperature.value
 
         # Verify the model is ready to be used
         assert self.fabm_model.checkReady(), 'One or more model dependencies have not been fulfilled.'
