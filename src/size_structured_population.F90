@@ -61,7 +61,7 @@ module mizer_size_structured_population
       real(rk) :: beta        ! preferred predator:prey mass ratio
       real(rk) :: sigma       ! s.d. of lognormal prey size selection function
       real(rk) :: erepro      ! efficiency of egg production
-      real(rk) :: xi          ! fraction of mass consiting of lipid reserve (which can fuel maintenance)
+      real(rk) :: xi          ! fraction of mass consisting of lipid reserve (which can fuel maintenance)
       integer  :: SRR         ! type of stock-recruitment relationship (SRR)
       real(rk) :: recruitment ! constant recruitment flux (SSR=0)
       real(rk) :: R_max       ! maximum recruitment flux (SSR=2)
@@ -74,7 +74,8 @@ module mizer_size_structured_population
       real(rk), allocatable :: V(:)            ! volumetric search rate (Eq M2)
       real(rk), allocatable :: I_max(:)        ! maximum ingestion rate (Eq M4)
       real(rk), allocatable :: std_metab(:)    ! standard metabolism (k*w^p in Eq M7)
-      real(rk), allocatable :: mu_b(:)         ! background mortality
+      real(rk), allocatable :: mu_b(:)         ! background mortality (temperature dependent)
+      real(rk), allocatable :: mu_s(:)         ! senescence mortality (temperature independent)
       real(rk), allocatable :: F(:)            ! fishing mortality
       real(rk), allocatable :: psi(:)          ! allocation to reproduction
       real(rk), allocatable :: phi(:,:)        ! prey preference
@@ -200,6 +201,7 @@ contains
    allocate(self%I_max(self%nclass))
    allocate(self%std_metab(self%nclass))
    allocate(self%mu_b(self%nclass))
+   allocate(self%mu_s(self%nclass))
    allocate(self%F(self%nclass))
    allocate(self%psi(self%nclass))
    allocate(self%V(self%nclass))
@@ -212,7 +214,11 @@ contains
    case (1)
       self%mu_b(:) = z0pre*self%w**z0exp
    end select
-   if (w_s>0.0_rk) self%mu_b = self%mu_b + 0.2_rk/sec_per_year*(self%w/w_s)**z_s  ! Blanchard et al. 10.1098/rstb.2012.0231 Table S1
+   if (w_s>0.0_rk) then
+      self%mu_s = 0.2_rk/sec_per_year*(self%w/w_s)**z_s  ! Blanchard et al. 10.1098/rstb.2012.0231 Table S1
+   else
+      self%mu_s = 0
+   end if
    self%F = 0.0_rk
    do iclass=1,self%nclass
       if (self%w(iclass)>w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))  ! fishing mortality [s-1]; Eqs M13 and M14 combined
@@ -244,6 +250,9 @@ contains
    end select
    write (*,*) '  @ minimum weight:',self%mu_b(1)*sec_per_year
    write (*,*) '  @ maximum weight:',self%mu_b(self%nclass)*sec_per_year
+   write (*,*) 'Senescence mortality (yr-1):'
+   write (*,*) '  @ minimum weight:',self%mu_s(1)*sec_per_year
+   write (*,*) '  @ maximum weight:',self%mu_s(self%nclass)*sec_per_year
    write (*,*) 'Fishing mortality at minimum size:',self%F(1)*sec_per_year,'yr-1'
    write (*,*) 'Fishing mortality at maximum size:',self%F(self%nclass)*sec_per_year,'yr-1'
 
@@ -392,7 +401,7 @@ contains
 #endif
 
          ! Initialize size-class-specific mortality (s-1) with precomputed size-dependent background value.
-         mu = self%mu_b
+         mu = self%mu_b*T_lim + self%mu_s
 
          ! Individual physiology (per size class)
          do iclass=1,self%nclass
@@ -466,5 +475,5 @@ contains
 end module mizer_size_structured_population
 
 !-----------------------------------------------------------------------
-! Copyright Jorn Bruggeman/PML 2015-2016
+! Copyright Jorn Bruggeman/PML 2015-2017
 !-----------------------------------------------------------------------
