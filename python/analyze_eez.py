@@ -8,14 +8,20 @@ from matplotlib import pyplot
 from matplotlib.dates import datestr2num, date2num, num2date
 import netCDF4
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../fabm/src/drivers/python'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../build/pyfabm/Release'))
+fabm_root = '../../fabm'
+fabm_root = '../../fabm-git'
+build_dir = '../../build/pyfabm'
+build_dir = '../../build'
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), fabm_root, 'src/drivers/python'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), build_dir, 'Release'))
 
 import mizer
 
 additional_outputs = []
 
 root = 'C:/Users/jbr/OneDrive/PML/FAO/EEZ-data'
+root = 'C:/Users/Jorn/OneDrive/PML/FAO/EEZ-data'
 source = 'IPSL-CM5A-LR'
 eez_number = 1
 preylist = []
@@ -35,7 +41,7 @@ parameters = {
     'E_a': 0.63,
     'beta': 100,
     'sigma': float(numpy.log(10.)),   # paper has log10 units, we use ln units
-    'gamma': 0.5*64./50., #paper=64., we incorporate kappa=0.5, and convert from density to concentration for a column of 50 m!
+    'gamma': 365., # QuestFish paper=64. times kappa=0.5; Faking giants paper gives approx 1 m3/d at 13 degrees
     'q': 0.82,
     'alpha': 0.2,
     'z0_type': 1,
@@ -48,7 +54,7 @@ parameters = {
     'recruitment': 0.,
     'h': 1e9,
     'w_minF': 1.25, # Blanchard et al 2012
-    'F': 1.6
+    'F': 0.8  # note: need to put double the intended value due to fisheries equation!
 }
 
 def addVariable(nc, name, long_name, units, data):
@@ -67,6 +73,7 @@ def processEEZ(eez_name):
     postfix = '_r1i1p1.nc'
     files = map(os.path.abspath, glob.glob(os.path.join(root, source, 'merged/%s*%s' % (prefix, postfix))))
     historical = map(os.path.abspath, glob.glob(os.path.join(root, source, 'merged/%shistorical%s' % (prefix, postfix))))[0]
+    files.remove(historical)
     files.insert(0, historical)
 
     initial_state = None
@@ -136,7 +143,8 @@ if __name__ == '__main__':
     for path in glob.glob(os.path.join(root, source, 'merged/EEZ*_Omon_%s_historical_r1i1p1.nc' % source)):
         eez_names.append(os.path.basename(path).split('_', 1)[0][3:])
 
-    #processEEZ(eez_names[0])
+    #processEEZ('231')
+    #processEEZ('228')
 
     # Process all EEZs using all available cores
     # Kill child process after processing a single EEZ (maxtasksperchild=1) to prevent ever increasing memory consumption.
