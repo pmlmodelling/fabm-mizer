@@ -41,7 +41,7 @@ parameters = {
     'E_a': 0.63,
     'beta': 100,
     'sigma': float(numpy.log(10.)),   # paper has log10 units, we use ln units
-    'gamma': 365., # QuestFish paper=64. times kappa=0.5; Faking giants paper gives approx 1 m3/d at 13 degrees
+    'gamma': 365., # QuestFish paper=64. times kappa=0.5; Faking giants paper gives approx 1 m3/d at 13 degrees, i.e., 365 m3/yr for a fish of 1 g. For 1 fish of 1 g per m3 the specific clearance rate is therefore 365 yr-1
     'q': 0.82,
     'alpha': 0.2,
     'z0_type': 1,
