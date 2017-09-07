@@ -63,11 +63,15 @@ parameters = {
     'F': 0.8  # note: need to put double the intended value due to fisheries equation!
 }
 
-def addVariable(nc, name, long_name, units, data):
-    ncvar = nc.createVariable(name, float, (time_name,), zlib=True)
-    ncvar[:] = data
+def addVariable(nc, name, long_name, units, data=None, dimensions=None):
+    if dimensions is None:
+        dimensions = (time_name,)
+    ncvar = nc.createVariable(name, float, dimensions, zlib=True, fill_value=-2e20)
+    if data is not None:
+        ncvar[:] = data
     ncvar.long_name = long_name
     ncvar.units = units
+    return ncvar
 
 def processLocation(args):
     assert len(args) == 4
@@ -109,6 +113,7 @@ def processLocation(args):
     lfi10000 = result.get_lfi_timeseries(10000.)
     landings[1:] = landings[1:] - landings[:-1]
     landings[0] = 0
+    return (times, biomass, landings, lfi80, lfi500, lfi10000)
 
     with netCDF4.Dataset(output_path, 'w') as ncout, netCDF4.Dataset(path) as nc:
         nctime_in = nc.variables[time_name]
@@ -132,16 +137,42 @@ if __name__ == '__main__':
     tasks = []
     if not os.path.isdir(args.output_path):
        os.mkdir(args.output_path)
-    with netCDF4.Dataset(args.source_path) as nc:
-       for i in range(len(nc.dimensions['x'])):
-          for j in range(len(nc.dimensions['y'])):
-              tasks.append((args.source_path, i, j, os.path.join(args.output_path, 'i=%i,j=%i.nc' % (i,j))))
+    for path in glob.glob(args.source_path):
+        with netCDF4.Dataset(path) as nc:
+            mask = nc.variables['mask']
+            for i in xrange(len(nc.dimensions['x'])):
+                for j in xrange(len(nc.dimensions['y'])):
+                    if mask[j, i] > 0:
+                        tasks.append((args.source_path, i, j, os.path.join(args.output_path, 'i=%i,j=%i.nc' % (i,j))))
 
-    processLocation((args.source_path, 50, 50, os.path.join(args.output_path, 'test.nc')))
-    sys.exit(0)
+    #processLocation(tasks[0])
+    #sys.exit(0)
 
     # Process all EEZs using all available cores
     # Kill child process after processing a single EEZ (maxtasksperchild=1) to prevent ever increasing memory consumption.
     import multiprocessing
     pool = multiprocessing.Pool(processes=None, maxtasksperchild=1)
-    pool.map(processEEZ, tasks)
+    results = pool.map(processLocation, tasks)
+    output_path = os.path.join(args.output_path, os.path.basename(args.source_path))
+    with netCDF4.Dataset(path) as nc, netCDF4.Dataset(output_path, 'w') as ncout:
+        nctime_in = nc.variables[time_name]
+        ncout.createDimension(time_name)
+        ncout.createDimension('x', len(nc.dimensions['x']))
+        ncout.createDimension('y', len(nc.dimensions['y']))
+        nctime_out = ncout.createVariable(time_name, nctime_in.datatype, nctime_in.dimensions, zlib=True)
+        nctime_out.units = nctime_in.units
+        times = results[0][0]
+        dates = [dt.replace(tzinfo=None) for dt in num2date(times)]
+        nctime_out[...] = netCDF4.date2num(dates, nctime_out.units)
+        ncbiomass = addVariable(ncout, 'biomass', 'biomass', 'g WM/m3', dimensions=(time_name, 'y', 'x'))
+        nclandings = addVariable(ncout, 'landings', 'landings', 'g WM', dimensions=(time_name, 'y', 'x'))
+        nclfi80 = addVariable(ncout, 'lfi80', 'fraction of fish > 80 g', '-', dimensions=(time_name, 'y', 'x'))
+        nclfi500 = addVariable(ncout, 'lfi500', 'fraction of fish > 500 g', '-', dimensions=(time_name, 'y', 'x'))
+        nclfi10000 = addVariable(ncout, 'lfi10000', 'fraction of fish > 10000 g', '-', dimensions=(time_name, 'y', 'x'))
+        for (source, i, j, output), (times, biomass, landings, lfi80, lfi500, lfi10000) in zip(tasks, results):
+            ncbiomass[:, j, i] = biomass
+            nclandings[:, j, i] = landings
+            nclfi80[:, j, i] = lfi80
+            nclfi500[:, j, i] = lfi500
+            nclfi10000[:, j, i] = lfi10000
+
