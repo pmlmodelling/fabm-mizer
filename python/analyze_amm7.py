@@ -17,6 +17,8 @@ build_dir = '../build'
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), fabm_root, 'src/drivers/python')))
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), build_dir, 'Release')))
 
+start_time = date2num(datetime.datetime(1985, 1, 1))
+
 import mizer
 
 # Function for converting from Equivalent Spherical Diameter (micrometer) to wet mass in g
@@ -74,8 +76,7 @@ def addVariable(nc, name, long_name, units, data=None, dimensions=None):
     return ncvar
 
 def processLocation(args):
-    assert len(args) == 4
-    path, i, j, output_path = args
+    path, i, j = args
     print('Processing %s for i=%i, j=%i...' % (path, i, j))
 
     # prey (currently from GOTM-ERSEM simulation) - scale to g WM/m3
@@ -97,7 +98,8 @@ def processLocation(args):
 
     # Time-integrate
     spinup = 50
-    result = m.run(times, spinup=spinup, verbose=True, save_spinup=False)
+    istart = times.searchsorted(start_time)
+    result = m.run(times[istart:], spinup=spinup, verbose=True, save_spinup=False)
 
     #result.plot_spectrum()
     #result.plot_lfi_timeseries(500., 1.25)
@@ -115,19 +117,6 @@ def processLocation(args):
     landings[0] = 0
     return (times, biomass, landings, lfi80, lfi500, lfi10000)
 
-    with netCDF4.Dataset(output_path, 'w') as ncout, netCDF4.Dataset(path) as nc:
-        nctime_in = nc.variables[time_name]
-        ncout.createDimension(time_name)
-        nctime_out = ncout.createVariable(time_name, nctime_in.datatype, nctime_in.dimensions, zlib=True)
-        nctime_out.units = nctime_in.units
-        dates = [dt.replace(tzinfo=None) for dt in num2date(times)]
-        nctime_out[...] = netCDF4.date2num(dates, nctime_out.units)
-        addVariable(ncout, 'biomass', 'biomass', 'g WM/m3', biomass)
-        addVariable(ncout, 'landings', 'landings', 'g WM', landings)
-        addVariable(ncout, 'lfi80', 'fraction of fish > 80 g', '-', lfi80)
-        addVariable(ncout, 'lfi500', 'fraction of fish > 500 g', '-', lfi500)
-        addVariable(ncout, 'lfi10000', 'fraction of fish > 10000 g', '-', lfi10000)
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('source_path')
@@ -143,36 +132,45 @@ if __name__ == '__main__':
             for i in xrange(len(nc.dimensions['x'])):
                 for j in xrange(len(nc.dimensions['y'])):
                     if mask[j, i] > 0:
-                        tasks.append((args.source_path, i, j, os.path.join(args.output_path, 'i=%i,j=%i.nc' % (i,j))))
+                        tasks.append((path, i, j))
 
-    #processLocation(tasks[0])
-    #sys.exit(0)
+    if False:
+        results = [processLocation(tasks[0])]
+    else:
+        # Process all EEZs using all available cores
+        # Kill child process after processing a single EEZ (maxtasksperchild=1) to prevent ever increasing memory consumption.
+        import multiprocessing
+        pool = multiprocessing.Pool(processes=None, maxtasksperchild=1)
+        results = pool.map(processLocation, tasks)
 
-    # Process all EEZs using all available cores
-    # Kill child process after processing a single EEZ (maxtasksperchild=1) to prevent ever increasing memory consumption.
-    import multiprocessing
-    pool = multiprocessing.Pool(processes=None, maxtasksperchild=1)
-    results = pool.map(processLocation, tasks)
-    output_path = os.path.join(args.output_path, os.path.basename(args.source_path))
-    with netCDF4.Dataset(path) as nc, netCDF4.Dataset(output_path, 'w') as ncout:
-        nctime_in = nc.variables[time_name]
-        ncout.createDimension(time_name)
-        ncout.createDimension('x', len(nc.dimensions['x']))
-        ncout.createDimension('y', len(nc.dimensions['y']))
-        nctime_out = ncout.createVariable(time_name, nctime_in.datatype, nctime_in.dimensions, zlib=True)
-        nctime_out.units = nctime_in.units
-        times = results[0][0]
-        dates = [dt.replace(tzinfo=None) for dt in num2date(times)]
-        nctime_out[...] = netCDF4.date2num(dates, nctime_out.units)
-        ncbiomass = addVariable(ncout, 'biomass', 'biomass', 'g WM/m3', dimensions=(time_name, 'y', 'x'))
-        nclandings = addVariable(ncout, 'landings', 'landings', 'g WM', dimensions=(time_name, 'y', 'x'))
-        nclfi80 = addVariable(ncout, 'lfi80', 'fraction of fish > 80 g', '-', dimensions=(time_name, 'y', 'x'))
-        nclfi500 = addVariable(ncout, 'lfi500', 'fraction of fish > 500 g', '-', dimensions=(time_name, 'y', 'x'))
-        nclfi10000 = addVariable(ncout, 'lfi10000', 'fraction of fish > 10000 g', '-', dimensions=(time_name, 'y', 'x'))
-        for (source, i, j, output), (times, biomass, landings, lfi80, lfi500, lfi10000) in zip(tasks, results):
-            ncbiomass[:, j, i] = biomass
-            nclandings[:, j, i] = landings
-            nclfi80[:, j, i] = lfi80
-            nclfi500[:, j, i] = lfi500
-            nclfi10000[:, j, i] = lfi10000
+    source2output = {}
+    def getOutput(source):
+        if source not in source2output:
+            with netCDF4.Dataset(path) as nc:
+                output_path = os.path.join(args.output_path, os.path.basename(source))
+                ncout = netCDF4.Dataset(output_path, 'w')
+                nctime_in = nc.variables[time_name]
+                ncout.createDimension(time_name)
+                ncout.createDimension('x', len(nc.dimensions['x']))
+                ncout.createDimension('y', len(nc.dimensions['y']))
+                nctime_out = ncout.createVariable(time_name, nctime_in.datatype, nctime_in.dimensions, zlib=True)
+                nctime_out.units = nctime_in.units
+                times = results[0][0]
+                dates = [dt.replace(tzinfo=None) for dt in num2date(times)]
+                nctime_out[...] = netCDF4.date2num(dates, nctime_out.units)
+                ncbiomass = addVariable(ncout, 'biomass', 'biomass', 'g WM/m3', dimensions=(time_name, 'y', 'x'))
+                nclandings = addVariable(ncout, 'landings', 'landings', 'g WM', dimensions=(time_name, 'y', 'x'))
+                nclfi80 = addVariable(ncout, 'lfi80', 'fraction of fish > 80 g', '-', dimensions=(time_name, 'y', 'x'))
+                nclfi500 = addVariable(ncout, 'lfi500', 'fraction of fish > 500 g', '-', dimensions=(time_name, 'y', 'x'))
+                nclfi10000 = addVariable(ncout, 'lfi10000', 'fraction of fish > 10000 g', '-', dimensions=(time_name, 'y', 'x'))
+            source2output[source] = ncout
+        return source2output[source]
+
+    for (source, i, j), (times, biomass, landings, lfi80, lfi500, lfi10000) in zip(tasks, results):
+        ncout = getOutput(source)
+        ncout.variables['biomass'][:, j, i] = biomass
+        ncout.variables['landings'][:, j, i] = landings
+        ncout.variables['lfi80'][:, j, i] = lfi80
+        ncout.variables['lfi500'][:, j, i] = lfi500
+        ncout.variables['lfi10000'][:, j, i] = lfi10000
 
