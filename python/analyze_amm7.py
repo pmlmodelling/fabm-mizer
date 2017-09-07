@@ -17,7 +17,7 @@ build_dir = '../build'
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), fabm_root, 'src/drivers/python')))
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), build_dir, 'Release')))
 
-start_time = date2num(datetime.datetime(1985, 1, 1))
+start_time = datetime.datetime(2014, 1, 1)
 
 import mizer
 
@@ -98,8 +98,9 @@ def processLocation(args):
 
     # Time-integrate
     spinup = 50
-    istart = times.searchsorted(start_time)
-    result = m.run(times[istart:], spinup=spinup, verbose=True, save_spinup=False)
+    istart = times.searchsorted(date2num(start_time))
+    times = times[istart:]
+    result = m.run(times, spinup=spinup, verbose=True, save_spinup=False)
 
     #result.plot_spectrum()
     #result.plot_lfi_timeseries(500., 1.25)
@@ -115,7 +116,7 @@ def processLocation(args):
     lfi10000 = result.get_lfi_timeseries(10000.)
     landings[1:] = landings[1:] - landings[:-1]
     landings[0] = 0
-    return (times, biomass, landings, lfi80, lfi500, lfi10000)
+    return (path, i, j, times, biomass, landings, lfi80, lfi500, lfi10000)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -134,17 +135,8 @@ if __name__ == '__main__':
                     if mask[j, i] > 0:
                         tasks.append((path, i, j))
 
-    if False:
-        results = [processLocation(tasks[0])]
-    else:
-        # Process all EEZs using all available cores
-        # Kill child process after processing a single EEZ (maxtasksperchild=1) to prevent ever increasing memory consumption.
-        import multiprocessing
-        pool = multiprocessing.Pool(processes=None, maxtasksperchild=1)
-        results = pool.map(processLocation, tasks)
-
     source2output = {}
-    def getOutput(source):
+    def getOutput(source, times):
         if source not in source2output:
             with netCDF4.Dataset(path) as nc:
                 output_path = os.path.join(args.output_path, os.path.basename(source))
@@ -155,7 +147,6 @@ if __name__ == '__main__':
                 ncout.createDimension('y', len(nc.dimensions['y']))
                 nctime_out = ncout.createVariable(time_name, nctime_in.datatype, nctime_in.dimensions, zlib=True)
                 nctime_out.units = nctime_in.units
-                times = results[0][0]
                 dates = [dt.replace(tzinfo=None) for dt in num2date(times)]
                 nctime_out[...] = netCDF4.date2num(dates, nctime_out.units)
                 ncbiomass = addVariable(ncout, 'biomass', 'biomass', 'g WM/m3', dimensions=(time_name, 'y', 'x'))
@@ -166,11 +157,34 @@ if __name__ == '__main__':
             source2output[source] = ncout
         return source2output[source]
 
-    for (source, i, j), (times, biomass, landings, lfi80, lfi500, lfi10000) in zip(tasks, results):
-        ncout = getOutput(source)
+    def saveResult(result):
+        source, i, j, times, biomass, landings, lfi80, lfi500, lfi10000 = result
+        print('saving results from %s, i=%i, j=%i' % (source, i, j))
+        ncout = getOutput(source, times)
         ncout.variables['biomass'][:, j, i] = biomass
         ncout.variables['landings'][:, j, i] = landings
         ncout.variables['lfi80'][:, j, i] = lfi80
         ncout.variables['lfi500'][:, j, i] = lfi500
         ncout.variables['lfi10000'][:, j, i] = lfi10000
+        ncout.sync()
 
+    if False:
+        saveResult(processLocation(tasks[0]))
+    else:
+        # Process all EEZs using all available cores
+        # Kill child process after processing a single EEZ (maxtasksperchild=1) to prevent ever increasing memory consumption.
+        import multiprocessing
+        pool = multiprocessing.Pool(processes=None, maxtasksperchild=1)
+
+        #results = pool.map(processLocation, tasks)
+        #for result in  results:
+        #    saveResult(result)
+
+        #result = pool.map_async(processLocation, tasks, callback=saveResult)
+        #result.wait()
+
+        for result in pool.imap(processLocation, tasks):
+            saveResult(result)
+
+    for nc in source2output.values():
+        nc.close()
