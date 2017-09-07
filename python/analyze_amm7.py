@@ -17,7 +17,7 @@ build_dir = '../build'
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), fabm_root, 'src/drivers/python')))
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), build_dir, 'Release')))
 
-start_time = datetime.datetime(2014, 1, 1)
+start_time = datetime.datetime(2000, 1, 1)
 
 import mizer
 
