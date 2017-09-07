@@ -31,13 +31,16 @@ class TimeSeries(ValueProvider):
         ValueProvider.__init__(self)
 
         def getData(ncvar):
-            final_dims, slc = [], []
+            final_dims, slc, location = [], [], []
             for dim in ncvar.dimensions:
                 if dim in dim2index and isinstance(dim2index[dim], int):
                     slc.append(dim2index[dim])
+                    location.append('%s=%i' % (dim, dim2index[dim]))
                 else:
                     slc.append(slice(None))
                     final_dims.append(dim)
+                    location.append('%s=all' % (dim,))
+            print('Reading %s from %s at %s' % (ncvar.name, path, ', '.join(location)))
             return final_dims, ncvar[slc]
 
         with netCDF4.Dataset(path) as nc:
