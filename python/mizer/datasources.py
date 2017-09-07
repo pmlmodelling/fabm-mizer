@@ -27,7 +27,7 @@ class Constant(ValueProvider):
         return self.value
 
 class TimeSeries(ValueProvider):
-    def __init__(self, path, variable_name, scale_factor=1.0, weights=None, plot=False, **dim2index):
+    def __init__(self, path, variable_name, scale_factor=1.0, weights=None, plot=False, time_name='time', **dim2index):
         ValueProvider.__init__(self)
         with netCDF4.Dataset(path) as nc:
             if variable_name in nc.variables:
@@ -74,9 +74,9 @@ class TimeSeries(ValueProvider):
                         slc = [slice(None)]*self.data.ndim
                         slc[idim] = dim2index[dimname]
                         self.data = self.data[slc]
-                elif dimname != 'time':
+                elif dimname != time_name:
                     assert False, 'No index (or "sum", "mean") provided for dimension %s' % dimname
-            nctime = nc.variables['time']
+            nctime = nc.variables[time_name]
             self.times = date2num(netCDF4.num2date(nctime[:], nctime.units))
         if plot:
             self.plot()
