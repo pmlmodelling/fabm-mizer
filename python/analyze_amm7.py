@@ -138,7 +138,7 @@ if __name__ == '__main__':
               tasks.append((args.source_path, i, j, os.path.join(args.output_path, 'i=%i,j=%i.nc' % (i,j))))
 
     processLocation((args.source_path, 0, 0, os.path.join(args.output_path, 'test.nc')))
-    return
+    sys.exit(0)
 
     # Process all EEZs using all available cores
     # Kill child process after processing a single EEZ (maxtasksperchild=1) to prevent ever increasing memory consumption.
