@@ -137,7 +137,7 @@ if __name__ == '__main__':
           for j in range(len(nc.dimensions['y'])):
               tasks.append((args.source_path, i, j, os.path.join(args.output_path, 'i=%i,j=%i.nc' % (i,j))))
 
-    processLocation((args.source_path, 0, 0, os.path.join(args.output_path, 'test.nc')))
+    processLocation((args.source_path, 50, 50, os.path.join(args.output_path, 'test.nc')))
     sys.exit(0)
 
     # Process all EEZs using all available cores
