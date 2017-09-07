@@ -33,9 +33,9 @@ class TimeSeries(ValueProvider):
         def getData(ncvar):
             final_dims, slc, location = [], [], []
             for dim in ncvar.dimensions:
-                if dim in dim2index and isinstance(dim2index[dim], int):
+                if dim in dim2index and isinstance(dim2index[dim], (int, slice)):
                     slc.append(dim2index[dim])
-                    location.append('%s=%i' % (dim, dim2index[dim]))
+                    location.append('%s=%s' % (dim, dim2index[dim]))
                 else:
                     slc.append(slice(None))
                     final_dims.append(dim)
@@ -89,7 +89,8 @@ class TimeSeries(ValueProvider):
                 elif dimname != time_name:
                     assert False, 'No index (or "sum", "mean") provided for dimension %s' % dimname
             nctime = nc.variables[time_name]
-            self.times = date2num(netCDF4.num2date(nctime[:], nctime.units))
+            timedim, timedata = getData(nctime)
+            self.times = date2num(netCDF4.num2date(timedata, nctime.units))
         if plot:
             self.plot()
 
