@@ -29,21 +29,32 @@ class Constant(ValueProvider):
 class TimeSeries(ValueProvider):
     def __init__(self, path, variable_name, scale_factor=1.0, weights=None, plot=False, time_name='time', **dim2index):
         ValueProvider.__init__(self)
+
+        def getData(ncvar):
+            final_dims, slc = [], []
+            for dim in ncvar.dimensions:
+                if dim in dim2index and isinstance(dim2index[dim], int):
+                    slc.append(dim2index[dim])
+                else:
+                    slc.append(slice(None))
+                    final_dims.append(dim)
+            return final_dims, ncvar[slc]
+
         with netCDF4.Dataset(path) as nc:
             if variable_name in nc.variables:
                 ncvar = nc.variables[variable_name]
-                self.data = ncvar[...]*scale_factor
+                dimensions, self.data = getData(ncvar)
+                self.data *= scale_factor
                 self.long_name = ncvar.long_name
                 self.units = ncvar.units
-                dimensions = ncvar.dimensions
             else:
                 namespace = {}
                 dimensions = None
                 for name, ncvar in nc.variables.items():
                     if name in variable_name:
-                        namespace[name] = ncvar[...]
-                        assert dimensions is None or dimensions == ncvar.dimensions
-                        dimensions = ncvar.dimensions
+                        vardims, namespace[name] = getData(ncvar)
+                        assert dimensions is None or dimensions == vardims
+                        dimensions = vardims
                 self.data = eval(variable_name, namespace)*scale_factor
                 self.long_name = variable_name
                 self.units = 'unknown'
@@ -51,7 +62,7 @@ class TimeSeries(ValueProvider):
                 self.units = '%s*%s' % (scale_factor, self.units)
             if weights is not None:
                 ncweights = nc.variables[weights]
-                weight_values = ncweights[...]
+                weight_dims, weight_values = getData(ncweights)
                 self.data *= weight_values
                 self.units = '%s*%s' % (self.units, ncweights.units)
             for idim in range(len(dimensions)-1, -1, -1):
@@ -71,9 +82,7 @@ class TimeSeries(ValueProvider):
                     elif dim2index[dimname] == 'sum':
                         self.data = self.data.sum(axis=idim)
                     else:
-                        slc = [slice(None)]*self.data.ndim
-                        slc[idim] = dim2index[dimname]
-                        self.data = self.data[slc]
+                        assert False, 'Unknown dimension indexer %s specified for %s' % (dim2index[dimname], dimname)
                 elif dimname != time_name:
                     assert False, 'No index (or "sum", "mean") provided for dimension %s' % dimname
             nctime = nc.variables[time_name]
