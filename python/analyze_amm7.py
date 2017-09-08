@@ -17,7 +17,8 @@ build_dir = '../build'
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), fabm_root, 'src/drivers/python')))
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), build_dir, 'Release')))
 
-start_time = datetime.datetime(2000, 1, 1)
+start_time = datetime.datetime(2009, 1, 1)
+stop_time = datetime.datetime(2012, 1, 1)
 
 import mizer
 
@@ -99,7 +100,9 @@ def processLocation(args):
     # Time-integrate
     spinup = 50
     istart = times.searchsorted(date2num(start_time))
-    times = times[istart:]
+    istop = times.searchsorted(date2num(stop_time))
+    times = times[istart:istop]
+
     result = m.run(times, spinup=spinup, verbose=True, save_spinup=False)
 
     #result.plot_spectrum()
@@ -118,10 +121,15 @@ def processLocation(args):
     landings[0] = 0
     return (path, i, j, times, biomass, landings, lfi80, lfi500, lfi10000)
 
+def ppProcessLocation(args):
+    import analyze_amm7
+    return analyze_amm7.processLocation(args)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('source_path')
     parser.add_argument('output_path')
+    parser.add_argument('--method', choices=('serial', 'multiprocessing', 'pp'), default='pp')
     args = parser.parse_args()
 
     tasks = []
@@ -168,9 +176,9 @@ if __name__ == '__main__':
         ncout.variables['lfi10000'][:, j, i] = lfi10000
         ncout.sync()
 
-    if False:
+    if args.method == 'serial':
         saveResult(processLocation(tasks[0]))
-    else:
+    elif args.method == 'multiprocessing':
         # Process all EEZs using all available cores
         # Kill child process after processing a single EEZ (maxtasksperchild=1) to prevent ever increasing memory consumption.
         import multiprocessing
@@ -184,6 +192,16 @@ if __name__ == '__main__':
         #result.wait()
 
         for result in pool.imap(processLocation, tasks):
+            saveResult(result)
+    else:
+        import pp
+        ppservers = ()
+        job_server = pp.Server(ppservers=ppservers, restart=True)
+        jobs = []
+        for task in tasks:
+            jobs.append(job_server.submit(ppProcessLocation, (task,)))
+        for job in jobs:
+            result = job()
             saveResult(result)
 
     for nc in source2output.values():
