@@ -229,32 +229,34 @@ contains
    else
       self%psi(:) = (self%w/w_inf)**(1-n) / (1+(self%w/w_mat)**(-10)) ! allocation to reproduction [-]; Eqs M13 and M14 combined
    end if
-   write (*,*) 'Specific search volume (yr-1):'
-   write (*,*) '  @ weight = 1:',gamma*sec_per_year,'(gamma)'
-   write (*,*) '  @ minimum weight:',self%V(1)*sec_per_year
-   write (*,*) '  @ maximum weight:',self%V(self%nclass)*sec_per_year
-   write (*,*) 'Specific ingestion rate (yr-1)'
-   write (*,*) '  @ weight = 1:',h*sec_per_year,'(h)'
-   write (*,*) '  @ minimum weight:',self%I_max(1)*sec_per_year
-   write (*,*) '  @ maximum weight:',self%I_max(self%nclass)*sec_per_year
-   write (*,*) 'Specific metabolism (yr-1):'
-   write (*,*) '  @ weight = 1:',self%std_metab(1)*sec_per_year,'(ks)'
-   write (*,*) '  @ minimum weight:',self%std_metab(1)*sec_per_year
-   write (*,*) '  @ maximum weight:',self%std_metab(self%nclass)*sec_per_year
-   write (*,*) 'Background mortality (yr-1):'
-   select case (z0_type)
-   case (0)
-      write (*,*) '  @ weight = 1:',z0*sec_per_year,'(z0)'
-   case (1)
-      write (*,*) '  @ weight = 1:',z0pre*sec_per_year,'(z0pre)'
-   end select
-   write (*,*) '  @ minimum weight:',self%mu_b(1)*sec_per_year
-   write (*,*) '  @ maximum weight:',self%mu_b(self%nclass)*sec_per_year
-   write (*,*) 'Senescence mortality (yr-1):'
-   write (*,*) '  @ minimum weight:',self%mu_s(1)*sec_per_year
-   write (*,*) '  @ maximum weight:',self%mu_s(self%nclass)*sec_per_year
-   write (*,*) 'Fishing mortality at minimum size:',self%F(1)*sec_per_year,'yr-1'
-   write (*,*) 'Fishing mortality at maximum size:',self%F(self%nclass)*sec_per_year,'yr-1'
+   if (.false.) then
+      write (*,*) 'Specific search volume (yr-1):'
+      write (*,*) '  @ weight = 1:',gamma*sec_per_year,'(gamma)'
+      write (*,*) '  @ minimum weight:',self%V(1)*sec_per_year
+      write (*,*) '  @ maximum weight:',self%V(self%nclass)*sec_per_year
+      write (*,*) 'Specific ingestion rate (yr-1)'
+      write (*,*) '  @ weight = 1:',h*sec_per_year,'(h)'
+      write (*,*) '  @ minimum weight:',self%I_max(1)*sec_per_year
+      write (*,*) '  @ maximum weight:',self%I_max(self%nclass)*sec_per_year
+      write (*,*) 'Specific metabolism (yr-1):'
+      write (*,*) '  @ weight = 1:',self%std_metab(1)*sec_per_year,'(ks)'
+      write (*,*) '  @ minimum weight:',self%std_metab(1)*sec_per_year
+      write (*,*) '  @ maximum weight:',self%std_metab(self%nclass)*sec_per_year
+      write (*,*) 'Background mortality (yr-1):'
+      select case (z0_type)
+      case (0)
+         write (*,*) '  @ weight = 1:',z0*sec_per_year,'(z0)'
+      case (1)
+         write (*,*) '  @ weight = 1:',z0pre*sec_per_year,'(z0pre)'
+      end select
+      write (*,*) '  @ minimum weight:',self%mu_b(1)*sec_per_year
+      write (*,*) '  @ maximum weight:',self%mu_b(self%nclass)*sec_per_year
+      write (*,*) 'Senescence mortality (yr-1):'
+      write (*,*) '  @ minimum weight:',self%mu_s(1)*sec_per_year
+      write (*,*) '  @ maximum weight:',self%mu_s(self%nclass)*sec_per_year
+      write (*,*) 'Fishing mortality at minimum size:',self%F(1)*sec_per_year,'yr-1'
+      write (*,*) 'Fishing mortality at maximum size:',self%F(self%nclass)*sec_per_year,'yr-1'
+   end if
 
    ! Register dependencies for all prey.
    ! If the population is cannibalistic, autoamtically add all our size classes to the set of prey types.
