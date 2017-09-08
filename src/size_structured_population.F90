@@ -398,8 +398,8 @@ contains
 #ifndef NDEBUG
          if (any(prey_loss<0)) &
             call self%fatal_error('do_bottom','prey_loss is negative')
-         if (any(prey_loss>delta_t)) &
-            call self%fatal_error('do_bottom','prey_loss is high (prey will be <0 within time step)')
+         !if (any(prey_loss>delta_t)) &
+         !   call self%fatal_error('do_bottom','prey_loss is high (prey will be <0 within time step)')
 #endif
 
          ! Initialize size-class-specific mortality (s-1) with precomputed size-dependent background value.
