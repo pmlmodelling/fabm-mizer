@@ -3,11 +3,11 @@ from __future__ import print_function
 import sys
 import os
 import tempfile
+import datetime
 
 import yaml
 import numpy
 import scipy.integrate
-import datetime
 from matplotlib import pyplot
 from matplotlib import animation
 from matplotlib.dates import num2date, date2num
