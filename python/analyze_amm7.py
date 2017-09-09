@@ -3,6 +3,7 @@ import os
 import glob
 import datetime
 import argparse
+import re
 
 import numpy
 from matplotlib import pyplot
@@ -93,7 +94,7 @@ def processLocation(args):
 
     # environment
     #temp = mizer.datasources.TimeSeries(forcing_file, temp_name)
-    temp = 12.
+    temp = 13.
 
     # create mizer model
     m = mizer.Mizer(prey=prey_collection, parameters=parameters, temperature=temp, recruitment_from_prey=True)
@@ -133,7 +134,33 @@ if __name__ == '__main__':
     parser.add_argument('source_path')
     parser.add_argument('output_path')
     parser.add_argument('--method', choices=('serial', 'multiprocessing', 'pp'), default='pp')
+    parser.add_argument('--ncpus', type=int, default=None)
+    parser.add_argument('--ppservers', default=None)
+    parser.add_argument('--secret', default=None)
     args = parser.parse_args()
+
+    if isinstance(args.ppservers, basestring):
+        match = re.match(r'(.*)\[(.*)\](.*)', args.ppservers)
+        if match is not None:
+            # Hostnames in PBS/SLURM notation, e.g., node[01-06]
+            ppservers = []
+            left, middle, right = match.groups()
+            for item in middle.split(','):
+                if '-' in item:
+                    start, stop = item.split('-')
+                    for i in range(int(start), int(stop)+1):
+                        ppservers.append('%s%s%s' % (left, str(i).zfill(len(start)), right))
+                else:
+                    ppservers.append('%s%s%s' % (left, item, right))
+            ppservers = tuple(ppservers)
+        else:
+            # Comma-separated hostnames
+            ppservers = args.ppservers.split(',')
+    else:
+        assert args.ppservers is None
+        ppservers = ()
+    if args.ncpus is None:
+        args.ncpus = 'autodetect'
 
     tasks = []
     if not os.path.isdir(args.output_path):
@@ -198,8 +225,7 @@ if __name__ == '__main__':
             saveResult(result)
     else:
         import pp
-        ppservers = ()
-        job_server = pp.Server(ppservers=ppservers, restart=True)
+        job_server = pp.Server(ncpus=args.ncpus, ppservers=ppservers, restart=True, secret=args.secret)
         jobs = []
         for task in tasks:
             jobs.append(job_server.submit(ppProcessLocation, (task,)))
