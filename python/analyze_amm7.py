@@ -15,7 +15,8 @@ build_dir = '../../build/pyfabm'
 build_dir = '../build'
 
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), fabm_root, 'src/drivers/python')))
-sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), build_dir, 'Release')))
+sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), build_dir, 'Release')))  # Visual Studio/Windows
+sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), build_dir)))             # Linux
 
 start_time = datetime.datetime(2009, 1, 1)
 stop_time = datetime.datetime(2012, 1, 1)
@@ -105,6 +106,8 @@ def processLocation(args):
 
     result = m.run(times, spinup=spinup, verbose=True, save_spinup=False)
 
+    if result is None:
+        return
     #result.plot_spectrum()
     #result.plot_lfi_timeseries(500., 1.25)
     #result.plot_biomass_timeseries(0., 500.)
@@ -119,7 +122,7 @@ def processLocation(args):
     lfi10000 = result.get_lfi_timeseries(10000.)
     landings[1:] = landings[1:] - landings[:-1]
     landings[0] = 0
-    return (path, i, j, times, biomass, landings, lfi80, lfi500, lfi10000)
+    return path, i, j, times, biomass, landings, lfi80, lfi500, lfi10000
 
 def ppProcessLocation(args):
     import analyze_amm7
@@ -202,7 +205,8 @@ if __name__ == '__main__':
             jobs.append(job_server.submit(ppProcessLocation, (task,)))
         for job in jobs:
             result = job()
-            saveResult(result)
+            if result is not None:
+               saveResult(result)
 
     for nc in source2output.values():
         nc.close()

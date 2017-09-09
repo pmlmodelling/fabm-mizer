@@ -204,6 +204,8 @@ class Mizer(object):
             print('Time integrating from %s to %s' % (num2date(t[0]), num2date(t[-1])))
         in_spinup = False
         y = scipy.integrate.odeint(dy, state, t)
+        if pyfabm.hasError():
+            return
 
         # Overwrite prey masses with imposed values.
         y[:, self.prey_indices] = self.prey.getValues(t)
