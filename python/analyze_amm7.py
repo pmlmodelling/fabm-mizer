@@ -86,7 +86,7 @@ def processLocation(args):
     scale_factor = 10*0.001 # 10 g wet mass/g carbon * 0.001 g C/mg C
     prey = []
     for name, ncname, size_range in preylist:
-        timeseries = mizer.datasources.TimeSeries(path, ncname, scale_factor=scale_factor, time_name=time_name, x=i, y=j)
+        timeseries = mizer.datasources.TimeSeries(path, ncname, scale_factor=scale_factor, time_name=time_name, x=i, y=j, stop=stop_time)
         times = timeseries.times
         prey.append(mizer.Prey(name, size_range, timeseries))
     prey_collection = mizer.PreyCollection(*prey)
@@ -94,7 +94,7 @@ def processLocation(args):
 
     # environment
     #temp = mizer.datasources.TimeSeries(forcing_file, temp_name)
-    temp = 13.
+    temp = 12.
 
     # create mizer model
     m = mizer.Mizer(prey=prey_collection, parameters=parameters, temperature=temp, recruitment_from_prey=True)
@@ -137,6 +137,7 @@ if __name__ == '__main__':
     parser.add_argument('--ncpus', type=int, default=None)
     parser.add_argument('--ppservers', default=None)
     parser.add_argument('--secret', default=None)
+    parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
     if isinstance(args.ppservers, basestring):
@@ -152,10 +153,10 @@ if __name__ == '__main__':
                         ppservers.append('%s%s%s' % (left, str(i).zfill(len(start)), right))
                 else:
                     ppservers.append('%s%s%s' % (left, item, right))
-            ppservers = tuple(ppservers)
         else:
             # Comma-separated hostnames
             ppservers = args.ppservers.split(',')
+        ppservers = tuple(ppservers)
     else:
         assert args.ppservers is None
         ppservers = ()
@@ -224,6 +225,9 @@ if __name__ == '__main__':
         for result in pool.imap(processLocation, tasks):
             saveResult(result)
     else:
+        if args.debug:
+            import logging
+            logging.basicConfig( level=logging.DEBUG)
         import pp
         job_server = pp.Server(ncpus=args.ncpus, ppservers=ppservers, restart=True, secret=args.secret)
         jobs = []

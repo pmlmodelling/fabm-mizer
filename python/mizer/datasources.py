@@ -3,7 +3,7 @@ from __future__ import print_function
 import numpy
 import netCDF4
 from matplotlib import pyplot
-from matplotlib.dates import date2num
+from matplotlib.dates import date2num, num2date
 
 class ValueProvider(object):
     def __init__(self):
@@ -27,7 +27,7 @@ class Constant(ValueProvider):
         return self.value
 
 class TimeSeries(ValueProvider):
-    def __init__(self, path, variable_name, scale_factor=1.0, weights=None, plot=False, time_name='time', **dim2index):
+    def __init__(self, path, variable_name, scale_factor=1.0, weights=None, plot=False, time_name='time', stop=None, **dim2index):
         ValueProvider.__init__(self)
 
         def getData(ncvar):
@@ -41,9 +41,20 @@ class TimeSeries(ValueProvider):
                     final_dims.append(dim)
                     location.append('%s=all' % (dim,))
             print('Reading %s from %s at %s' % (ncvar.name, path, ', '.join(location)))
-            return final_dims, ncvar[slc]
+            vardata = ncvar[slc]
+            valid = numpy.isfinite(vardata)
+            assert valid.all(), 'Variable %s in %s contains non-finite values (NaN?). Data: %s. First problem time: %s' % (path, ncvar.name, vardata, num2date(self.times[numpy.logical_not(valid)][0]))
+            return final_dims, vardata
 
         with netCDF4.Dataset(path) as nc:
+            nctime = nc.variables[time_name]
+            timedim, timedata = getData(nctime)
+            if stop is not None:
+                istop = timedata.searchsorted(netCDF4.date2num(stop, nctime.units)) + 1
+                dim2index[time_name] = slice(0, istop)
+                timedata = timedata[:istop]
+            self.times = date2num(netCDF4.num2date(timedata, nctime.units))
+
             if variable_name in nc.variables:
                 ncvar = nc.variables[variable_name]
                 dimensions, self.data = getData(ncvar)
@@ -88,9 +99,8 @@ class TimeSeries(ValueProvider):
                         assert False, 'Unknown dimension indexer %s specified for %s' % (dim2index[dimname], dimname)
                 elif dimname != time_name:
                     assert False, 'No index (or "sum", "mean") provided for dimension %s' % dimname
-            nctime = nc.variables[time_name]
-            timedim, timedata = getData(nctime)
-            self.times = date2num(netCDF4.num2date(timedata, nctime.units))
+        valid = numpy.isfinite(self.data)
+        assert valid.all(), 'Variable %s in %s contains non-finite values (NaN?). Data: %s. First problem time: %s' % (path, variable_name, self.data, num2date(self.times[numpy.logical_not(valid)][0]))
         if plot:
             self.plot()
 
