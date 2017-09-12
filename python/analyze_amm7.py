@@ -233,10 +233,13 @@ if __name__ == '__main__':
         jobs = []
         for task in tasks:
             jobs.append(job_server.submit(ppProcessLocation, (task,)))
-        for job in jobs:
+        for ijob, job in enumerate(jobs):
             result = job()
             if result is not None:
+               print('job %i: saving result...' % ijob)
                saveResult(result)
-
+            else:
+               print('job %i: FAILED!' % ijob)
+ 
     for nc in source2output.values():
         nc.close()
