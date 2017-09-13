@@ -68,10 +68,10 @@ parameters = {
     'F': 0.8  # note: need to put double the intended value due to fisheries equation!
 }
 
-def addVariable(nc, name, long_name, units, data=None, dimensions=None):
+def addVariable(nc, name, long_name, units, data=None, dimensions=None, zlib=False):
     if dimensions is None:
         dimensions = (time_name,)
-    ncvar = nc.createVariable(name, float, dimensions, zlib=True, fill_value=-2e20)
+    ncvar = nc.createVariable(name, float, dimensions, zlib=zlib, fill_value=-2e20)
     if data is not None:
         ncvar[:] = data
     ncvar.long_name = long_name
@@ -175,7 +175,7 @@ if __name__ == '__main__':
                         tasks.append((path, i, j))
 
     source2output = {}
-    def getOutput(source, times):
+    def getOutput(source, times, compress=False):
         if source not in source2output:
             with netCDF4.Dataset(path) as nc:
                 output_path = os.path.join(args.output_path, os.path.basename(source))
@@ -184,19 +184,19 @@ if __name__ == '__main__':
                 ncout.createDimension(time_name)
                 ncout.createDimension('x', len(nc.dimensions['x']))
                 ncout.createDimension('y', len(nc.dimensions['y']))
-                nctime_out = ncout.createVariable(time_name, nctime_in.datatype, nctime_in.dimensions, zlib=True)
+                nctime_out = ncout.createVariable(time_name, nctime_in.datatype, nctime_in.dimensions, zlib=compress)
                 nctime_out.units = nctime_in.units
                 dates = [dt.replace(tzinfo=None) for dt in num2date(times)]
                 nctime_out[...] = netCDF4.date2num(dates, nctime_out.units)
-                ncbiomass = addVariable(ncout, 'biomass', 'biomass', 'g WM/m3', dimensions=(time_name, 'y', 'x'))
-                nclandings = addVariable(ncout, 'landings', 'landings', 'g WM', dimensions=(time_name, 'y', 'x'))
-                nclfi80 = addVariable(ncout, 'lfi80', 'fraction of fish > 80 g', '-', dimensions=(time_name, 'y', 'x'))
-                nclfi500 = addVariable(ncout, 'lfi500', 'fraction of fish > 500 g', '-', dimensions=(time_name, 'y', 'x'))
-                nclfi10000 = addVariable(ncout, 'lfi10000', 'fraction of fish > 10000 g', '-', dimensions=(time_name, 'y', 'x'))
+                ncbiomass = addVariable(ncout, 'biomass', 'biomass', 'g WM/m3', dimensions=(time_name, 'y', 'x'), zlib=compress)
+                nclandings = addVariable(ncout, 'landings', 'landings', 'g WM', dimensions=(time_name, 'y', 'x'), zlib=compress)
+                nclfi80 = addVariable(ncout, 'lfi80', 'fraction of fish > 80 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress)
+                nclfi500 = addVariable(ncout, 'lfi500', 'fraction of fish > 500 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress)
+                nclfi10000 = addVariable(ncout, 'lfi10000', 'fraction of fish > 10000 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress)
             source2output[source] = ncout
         return source2output[source]
 
-    def saveResult(result):
+    def saveResult(result, sync=True):
         source, i, j, times, biomass, landings, lfi80, lfi500, lfi10000 = result
         print('saving results from %s, i=%i, j=%i' % (source, i, j))
         ncout = getOutput(source, times)
@@ -205,7 +205,8 @@ if __name__ == '__main__':
         ncout.variables['lfi80'][:, j, i] = lfi80
         ncout.variables['lfi500'][:, j, i] = lfi500
         ncout.variables['lfi10000'][:, j, i] = lfi10000
-        ncout.sync()
+        if sync:
+           ncout.sync()
 
     if args.method == 'serial':
         import cProfile
@@ -227,7 +228,7 @@ if __name__ == '__main__':
         #result.wait()
 
         for result in pool.imap(processLocation, tasks):
-            saveResult(result)
+            saveResult(resulti, sync=False)
     else:
         if args.debug:
             import logging
@@ -241,9 +242,10 @@ if __name__ == '__main__':
             result = job()
             if result is not None:
                print('job %i: saving result...' % ijob)
-               saveResult(result)
+               saveResult(result, sync=False)
             else:
                print('job %i: FAILED!' % ijob)
+        job_server.print_stats()
         job_server.destroy()
  
     for nc in source2output.values():
