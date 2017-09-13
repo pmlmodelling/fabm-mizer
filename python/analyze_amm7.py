@@ -240,6 +240,7 @@ if __name__ == '__main__':
                saveResult(result)
             else:
                print('job %i: FAILED!' % ijob)
+        job_server.destroy()
  
     for nc in source2output.values():
         nc.close()
