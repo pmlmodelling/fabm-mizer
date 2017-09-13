@@ -208,7 +208,11 @@ if __name__ == '__main__':
         ncout.sync()
 
     if args.method == 'serial':
-        saveResult(processLocation(tasks[0]))
+        import cProfile
+        import pstats
+        cProfile.run('saveResult(processLocation(tasks[0]))', 'mizerprof')
+        p = pstats.Stats('mizerprof')
+        p.strip_dirs().sort_stats('cumulative').print_stats()
     elif args.method == 'multiprocessing':
         # Process all EEZs using all available cores
         # Kill child process after processing a single EEZ (maxtasksperchild=1) to prevent ever increasing memory consumption.
