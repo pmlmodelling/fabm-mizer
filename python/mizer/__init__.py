@@ -93,6 +93,7 @@ class GriddedPreyCollection(BasePreyCollection):
 
 class Mizer(object):
     def __init__(self, parameters={}, prey=(), temperature=None, recruitment_from_prey=False):
+        assert not pyfabm.hasError(), 'pyfabm library has called stop'
         #fabm_yaml_path = 'fabm.yaml'
         fabm_yaml_fd, fabm_yaml_path = tempfile.mkstemp()
         mizer_params = dict(parameters)
