@@ -39,7 +39,7 @@ preylist.append(('microphytoplankton', 'P4_c', esd2mass(20., 200.)))
 preylist.append(('mesozooplankton', 'Z4_c', (1e-5, 1e-3)))
 preylist.append(('microzooplankton', 'Z5_c', esd2mass(20., 200.)))
 preylist.append(('heterotrophic nanoflagellates', 'Z6_c', esd2mass(2., 20.)))
-temp_name = 'tos-273.15'
+temp_name = 'votemper'
 time_name = 'time_counter'
 
 # mizer parameters
@@ -93,15 +93,16 @@ def processLocation(args):
     prey_collection = mizer.GriddedPreyCollection(prey_collection)
 
     # environment
-    #temp = mizer.datasources.TimeSeries(forcing_file, temp_name)
-    temp = 12.
+    temp = mizer.datasources.TimeSeries(path, temp_name, time_name=time_name, x=i, y=j, stop=stop_time)
+    #temp = 12.
 
     # create mizer model
     m = mizer.Mizer(prey=prey_collection, parameters=parameters, temperature=temp, recruitment_from_prey=True)
 
     # Time-integrate
     spinup = 50
-    istart = times.searchsorted(date2num(start_time))
+    #istart = times.searchsorted(date2num(start_time))
+    istart = 0
     istop = times.searchsorted(date2num(stop_time))
     times = times[istart:istop]
 
