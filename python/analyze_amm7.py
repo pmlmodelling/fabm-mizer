@@ -182,7 +182,7 @@ if __name__ == '__main__':
                 output_path = os.path.join(args.output_path, os.path.basename(source))
                 ncout = netCDF4.Dataset(output_path, 'w')
                 nctime_in = nc.variables[time_name]
-                ncout.createDimension(time_name)
+                ncout.createDimension(time_name, len(times))
                 ncout.createDimension('x', len(nc.dimensions['x']))
                 ncout.createDimension('y', len(nc.dimensions['y']))
                 nctime_out = ncout.createVariable(time_name, nctime_in.datatype, nctime_in.dimensions, zlib=compress)
@@ -209,6 +209,7 @@ if __name__ == '__main__':
         if sync:
            ncout.sync()
 
+    final_output_path = None
     if args.method == 'serial':
         import cProfile
         import pstats
@@ -235,6 +236,8 @@ if __name__ == '__main__':
             import logging
             logging.basicConfig( level=logging.DEBUG)
         import pp
+        final_output_path = args.output_path
+        args.output_path = '/dev/shm'
         job_server = pp.Server(ncpus=args.ncpus, ppservers=ppservers, restart=True, secret=args.secret)
         jobs = []
         for task in tasks:
@@ -249,5 +252,12 @@ if __name__ == '__main__':
         job_server.print_stats()
         job_server.destroy()
  
-    for nc in source2output.values():
+    for source, nc in source2output.items():
+        name = os.path.basename(source)
         nc.close()
+        if final_output_path is not None:
+           target = os.path.join(final_output_path, name)
+           if os.path.isfile(target):
+              os.remove(target)
+           os.rename(os.path.join(args.output_path, name), target)
+
