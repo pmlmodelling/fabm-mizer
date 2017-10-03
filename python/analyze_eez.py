@@ -8,6 +8,8 @@ from matplotlib import pyplot
 from matplotlib.dates import datestr2num, date2num, num2date
 import netCDF4
 
+import slurm
+
 platform = 'ceto'
 source = 'IPSL-CM5A-LR'
 
@@ -153,7 +155,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--method', choices=('serial', 'multiprocessing', 'pp'), default=serial)
+    parser.add_argument('--method', choices=('serial', 'multiprocessing', 'pp'), default='serial')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--ncpus', type=int, default=None)
     parser.add_argument('--ppservers', default=None)
@@ -182,7 +184,7 @@ if __name__ == '__main__':
             import logging
             logging.basicConfig( level=logging.DEBUG)
         import pp
-        job_server = pp.Server(ncpus=args.ncpus, ppservers=ppservers, restart=True, secret=args.secret)
+        job_server = pp.Server(ncpus=args.ncpus, ppservers=slurm.getNodes(args.ppservers), restart=True, secret=args.secret)
         jobs = []
         for eez_name in eez_names:
             jobs.append(job_server.submit(processEEZ, (eez_name,)))
