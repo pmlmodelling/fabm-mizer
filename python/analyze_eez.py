@@ -133,6 +133,7 @@ def processEEZ(eez_name):
         landings[0] = 0
 
         if initial_state is None:
+            # use final state of historical simulation to start future scenarios
             initial_state = result.y[-1, :]
 
         output_dir = os.path.join(root, source, 'fish')
