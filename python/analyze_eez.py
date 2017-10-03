@@ -8,28 +8,40 @@ from matplotlib import pyplot
 from matplotlib.dates import datestr2num, date2num, num2date
 import netCDF4
 
-fabm_root = '../../fabm'
-fabm_root = '../../fabm-git'
-build_dir = '../../build/pyfabm'
-build_dir = '../../build'
+platform = 'ceto'
+source = 'IPSL-CM5A-LR'
+
+if platform == 'ceto':
+    root = '/work/jbr/FAO/EEZ-data'
+    build_dir = '../build'
+    fabm_root = '../../fabm-git'
+else:
+    root = 'C:/Users/jbr/OneDrive/PML/FAO/EEZ-data'
+    root = 'C:/Users/Jorn/OneDrive/PML/FAO/EEZ-data'
+    root = 'D:/temp/EEZ-data'
+    fabm_root = '../../fabm'
+    build_dir = '../../build/pyfabm'
+    build_dir = '../build-python'
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), fabm_root, 'src/drivers/python'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), build_dir, 'Release'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), build_dir, 'Release')) # windows-only
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), build_dir))
 
 import mizer
 
 additional_outputs = []
 
-root = 'C:/Users/jbr/OneDrive/PML/FAO/EEZ-data'
-root = 'C:/Users/Jorn/OneDrive/PML/FAO/EEZ-data'
-source = 'IPSL-CM5A-LR'
-eez_number = 1
 preylist = []
-preylist.append(('diatoms', 'phydiat', (10., 100.)))
-#preylist.append(('miscellaneous phytoplankton', 'phymisc', (2., 20.)))
-preylist.append(('microzooplankton', 'zmicro', (20., 200.)))
-preylist.append(('mesozooplankton', 'zooc-zmicro', (200., 2000.)))
-temp_name = 'tos-273.15'
+
+if source.startswith('IPSL-'):
+    # PISCES size classes, Olivier Maury pers comm 20/22 Jun 2017
+    preylist.append(('diatoms', 'phydiat', (10., 100.)))
+    #preylist.append(('miscellaneous phytoplankton', 'phymisc', (2., 20.)))
+    preylist.append(('microzooplankton', 'zmicro', (20., 200.)))
+    preylist.append(('mesozooplankton', 'zmeso', (200., 2000.)))
+    temp_name = 'tos-273.15' # note IPSL models express SST in Kelvin!
+else:
+    assert False, 'don\'t know prey and temperature variable names for %s' % source
 
 # mizer parameters
 parameters = {
@@ -138,6 +150,16 @@ def processEEZ(eez_name):
             addVariable(ncout, 'lfi10000', 'fraction of fish > 10000 g', '-', lfi10000)
 
 if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--method', choices=('serial', 'multiprocessing', 'pp'), default=serial)
+    parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--ncpus', type=int, default=None)
+    parser.add_argument('--ppservers', default=None)
+    parser.add_argument('--secret', default=None)
+    args = parser.parse_args()
+
     # Build list of EEZ names
     eez_names = []
     for path in glob.glob(os.path.join(root, source, 'merged/EEZ*_Omon_%s_historical_r1i1p1.nc' % source)):
@@ -148,6 +170,23 @@ if __name__ == '__main__':
 
     # Process all EEZs using all available cores
     # Kill child process after processing a single EEZ (maxtasksperchild=1) to prevent ever increasing memory consumption.
-    import multiprocessing
-    pool = multiprocessing.Pool(processes=None, maxtasksperchild=1)
-    pool.map(processEEZ, eez_names)
+    if args.method == 'serial':
+        for eez_name in eez_names:
+            processEEZ(eez_name)
+    elif args.method == 'multiprocessing':
+        import multiprocessing
+        pool = multiprocessing.Pool(processes=None, maxtasksperchild=1)
+        pool.map(processEEZ, eez_names)
+    else:
+        if args.debug:
+            import logging
+            logging.basicConfig( level=logging.DEBUG)
+        import pp
+        job_server = pp.Server(ncpus=args.ncpus, ppservers=ppservers, restart=True, secret=args.secret)
+        jobs = []
+        for eez_name in eez_names:
+            jobs.append(job_server.submit(processEEZ, (eez_name,)))
+        for ijob, job in enumerate(jobs):
+            result = job()
+        job_server.print_stats()
+        job_server.destroy()
