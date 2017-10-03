@@ -153,7 +153,7 @@ def processEEZ(eez_name):
 
 def ppProcessEEZ(*args):
     import analyze_eez
-    return analyze_eez.ppProcessEEZ(*args)
+    return analyze_eez.processEEZ(*args)
 
 if __name__ == '__main__':
     import argparse
