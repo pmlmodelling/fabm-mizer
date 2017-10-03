@@ -180,6 +180,8 @@ if __name__ == '__main__':
         pool = multiprocessing.Pool(processes=None, maxtasksperchild=1)
         pool.map(processEEZ, eez_names)
     else:
+        if args.ncpus is None:
+            args.ncpus = 'autodetect'
         if args.debug:
             import logging
             logging.basicConfig( level=logging.DEBUG)
