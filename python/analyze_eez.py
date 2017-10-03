@@ -151,6 +151,10 @@ def processEEZ(eez_name):
             addVariable(ncout, 'lfi500', 'fraction of fish > 500 g', '-', lfi500)
             addVariable(ncout, 'lfi10000', 'fraction of fish > 10000 g', '-', lfi10000)
 
+def ppProcessEEZ(*args):
+    import analyze_eez
+    return analyze_eez.ppProcessEEZ(*args)
+
 if __name__ == '__main__':
     import argparse
 
@@ -189,7 +193,7 @@ if __name__ == '__main__':
         job_server = pp.Server(ncpus=args.ncpus, ppservers=slurm.getNodes(args.ppservers), restart=True, secret=args.secret)
         jobs = []
         for eez_name in eez_names:
-            jobs.append(job_server.submit(processEEZ, (eez_name,)))
+            jobs.append(job_server.submit(ppProcessEEZ, (eez_name,)))
         for ijob, job in enumerate(jobs):
             result = job()
         job_server.print_stats()
