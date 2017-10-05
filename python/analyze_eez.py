@@ -11,7 +11,6 @@ import netCDF4
 import slurm
 
 platform = 'ceto'
-source = 'IPSL-CM5A-LR'
 
 if platform == 'ceto':
     root = '/work/jbr/FAO/EEZ-data'
@@ -32,27 +31,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), build_dir))
 import mizer
 
 additional_outputs = []
-
-preylist = []
-
-if source.startswith('IPSL-'):
-    # PISCES size classes, Olivier Maury pers comm 20/22 Jun 2017
-    preylist.append(('diatoms', 'phydiat', (10., 100.)))
-    #preylist.append(('miscellaneous phytoplankton', 'phymisc', (2., 20.)))
-    preylist.append(('microzooplankton', 'zmicro', (20., 200.)))
-    preylist.append(('mesozooplankton', 'zmeso', (200., 2000.)))
-    temp_name = 'tos-273.15' # note IPSL models express SST in Kelvin!
-elif source.startswith('CMCC-'):
-    # BFM size classes, Momme pers comm 5 Oct 2017 [quoting BFM manual]
-    preylist.append(('diatoms', 'phydiat', (20., 200.)))
-    preylist.append(('nanophytoplankton', 'phymisc', (2., 20.)))
-    preylist.append(('picophytoplankton', 'phypico', (0.2, 2.)))
-    #preylist.append(('protozoa', 'zmisc', (2., 20.))) # currently missing 2017-10-05
-    preylist.append(('microzooplankton', 'zmicro', (20., 200.)))
-    preylist.append(('mesozooplankton', 'zmeso', (200., 2000.)))
-    temp_name = 'tos-273.15' # note CMCC models express SST in Kelvin!
-else:
-    assert False, 'don\'t know prey and temperature variable names for %s' % source
 
 # mizer parameters
 parameters = {
@@ -91,7 +69,27 @@ def esd2mass(d): # d: equivalent spherical diameter in micrometer
     V = 4./3.*numpy.pi*(numpy.array(d)/2e6)**3  # V: volume in m3
     return V*1e6  # mass in g approximately equals volume in m3 multiplied by 1e6 (assumes density of 1000 kg/m3)
 
-def processEEZ(eez_name):
+def processEEZ(source, eez_name):
+    preylist = []
+    if source.startswith('IPSL-'):
+       # PISCES size classes, Olivier Maury pers comm 20/22 Jun 2017
+       preylist.append(('diatoms', 'phydiat', (10., 100.)))
+       #preylist.append(('miscellaneous phytoplankton', 'phymisc', (2., 20.)))
+       preylist.append(('microzooplankton', 'zmicro', (20., 200.)))
+       preylist.append(('mesozooplankton', 'zmeso', (200., 2000.)))
+       temp_name = 'tos-273.15' # note IPSL models express SST in Kelvin!
+    elif source.startswith('CMCC-'):
+        # BFM size classes, Momme pers comm 5 Oct 2017 [quoting BFM manual]
+        preylist.append(('diatoms', 'phydiat', (20., 200.)))
+        preylist.append(('nanophytoplankton', 'phymisc', (2., 20.)))
+        preylist.append(('picophytoplankton', 'phypico', (0.2, 2.)))
+        #preylist.append(('protozoa', 'zmisc', (2., 20.))) # currently missing 2017-10-05
+        preylist.append(('microzooplankton', 'zmicro', (20., 200.)))
+        preylist.append(('mesozooplankton', 'zmeso', (200., 2000.)))
+        temp_name = 'tos-273.15' # note CMCC models express SST in Kelvin!
+    else:
+       assert False, 'don\'t know prey and temperature variable names for %s' % source
+
     prefix = 'EEZ%s_Omon_%s_' % (eez_name, source)
     postfix = '_r1i1p1.nc'
     files = map(os.path.abspath, glob.glob(os.path.join(root, source, 'merged/%s*%s' % (prefix, postfix))))
@@ -174,11 +172,12 @@ if __name__ == '__main__':
     parser.add_argument('--ncpus', type=int, default=None)
     parser.add_argument('--ppservers', default=None)
     parser.add_argument('--secret', default=None)
+    parser.add_argument('--source', default='IPSL-CM5A-LR')
     args = parser.parse_args()
 
     # Build list of EEZ names
     eez_names = []
-    for path in glob.glob(os.path.join(root, source, 'merged/EEZ*_Omon_%s_historical_r1i1p1.nc' % source)):
+    for path in glob.glob(os.path.join(root, args.source, 'merged/EEZ*_Omon_%s_historical_r1i1p1.nc' % args.source)):
         eez_names.append(os.path.basename(path).split('_', 1)[0][3:])
 
     #processEEZ('231')
@@ -188,7 +187,7 @@ if __name__ == '__main__':
     # Kill child process after processing a single EEZ (maxtasksperchild=1) to prevent ever increasing memory consumption.
     if args.method == 'serial':
         for eez_name in eez_names:
-            processEEZ(eez_name)
+            processEEZ(args.source, eez_name)
     elif args.method == 'multiprocessing':
         import multiprocessing
         pool = multiprocessing.Pool(processes=None, maxtasksperchild=1)
@@ -203,8 +202,9 @@ if __name__ == '__main__':
         job_server = pp.Server(ncpus=args.ncpus, ppservers=slurm.getNodes(args.ppservers), restart=True, secret=args.secret)
         jobs = []
         for eez_name in eez_names:
-            jobs.append(job_server.submit(ppProcessEEZ, (eez_name,)))
+            jobs.append(job_server.submit(ppProcessEEZ, (args.source, eez_name)))
         for ijob, job in enumerate(jobs):
             result = job()
+            print 'Job %i done' % ijob
         job_server.print_stats()
         job_server.destroy()

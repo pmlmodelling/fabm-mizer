@@ -4,6 +4,7 @@ import glob
 import datetime
 import argparse
 import re
+import shutil
 
 import numpy
 from matplotlib import pyplot
@@ -209,6 +210,7 @@ if __name__ == '__main__':
         if sync:
            ncout.sync()
 
+    job_server = None
     final_output_path = None
     if args.method == 'serial':
         import cProfile
@@ -250,14 +252,17 @@ if __name__ == '__main__':
             else:
                print('job %i: FAILED!' % ijob)
         job_server.print_stats()
-        job_server.destroy()
  
     for source, nc in source2output.items():
         name = os.path.basename(source)
+        print('Closing %s...' % os.path.join(args.output_path, name))
         nc.close()
         if final_output_path is not None:
            target = os.path.join(final_output_path, name)
            if os.path.isfile(target):
               os.remove(target)
-           os.rename(os.path.join(args.output_path, name), target)
+           shutil.move(os.path.join(args.output_path, name), target)
+
+    if job_server is not None:
+       job_server.destroy()
 
