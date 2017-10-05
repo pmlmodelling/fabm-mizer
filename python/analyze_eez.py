@@ -13,7 +13,7 @@ import slurm
 platform = 'ceto'
 
 if platform == 'ceto':
-    root = '/work/jbr/FAO/EEZ-data'
+    root = '/work/jbr/fao/EEZ-data'
     build_dir = '../build'
     fabm_root = '../../fabm-git'
 else:
