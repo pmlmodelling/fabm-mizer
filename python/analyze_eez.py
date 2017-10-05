@@ -83,7 +83,7 @@ def processEEZ(source, eez_name):
         preylist.append(('diatoms', 'phydiat', (20., 200.)))
         preylist.append(('nanophytoplankton', 'phymisc', (2., 20.)))
         preylist.append(('picophytoplankton', 'phypico', (0.2, 2.)))
-        preylist.append(('protozoa', 'zmisc', (2., 20.))) # currently missing 2017-10-05
+        preylist.append(('protozoa', 'zoocmisc', (2., 20.))) # currently missing 2017-10-05
         preylist.append(('microzooplankton', 'zmicro', (20., 200.)))
         preylist.append(('mesozooplankton', 'zmeso', (200., 2000.)))
         temp_name = 'tos-273.15' # note CMCC models express SST in Kelvin!
