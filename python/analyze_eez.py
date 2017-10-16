@@ -87,6 +87,14 @@ def processEEZ(source, eez_name):
         preylist.append(('microzooplankton', 'zmicro', (20., 200.)))
         preylist.append(('mesozooplankton', 'zmeso', (200., 2000.)))
         temp_name = 'tos-273.15' # note CMCC models express SST in Kelvin!
+    elif source.startswith('GFDL-'):
+        # GFDL size classes - winging it :-(
+        preylist.append(('diatoms', 'phydiat', (20., 200.)))
+        preylist.append(('diazotrophs', 'phydiaz', (0.2, 2.)))
+        preylist.append(('miscellaneous_phytoplankton', 'phymisc', (2., 20.)))
+        preylist.append(('picophytoplankton', 'phypico', (0.2, 2.)))
+        preylist.append(('zooplankton', 'zooc', (200., 2000.)))
+        temp_name = 'tos-273.15' # note GFDL models express SST in Kelvin!
     else:
        assert False, 'don\'t know prey and temperature variable names for %s' % source
 
