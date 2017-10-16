@@ -131,6 +131,8 @@ def processEEZ(source, eez_name):
         # Time-integrate
         spinup = 50 if initial_state is None else 0
         result = m.run(times, spinup=spinup, verbose=True, save_spinup=False, initial_state=initial_state)
+        if result is None:
+           return '%s: %s' % (eez_name, forcing_file)
 
         #result.plot_spectrum()
         #result.plot_lfi_timeseries(500., 1.25)
@@ -211,8 +213,14 @@ if __name__ == '__main__':
         jobs = []
         for eez_name in eez_names:
             jobs.append(job_server.submit(ppProcessEEZ, (args.source, eez_name)))
+        failures = []
         for ijob, job in enumerate(jobs):
             result = job()
+            if result is not None:
+               failures.append(result)
             print 'Job %i done' % ijob
         job_server.print_stats()
+        print 'The following failed:'
+        for failure in failures:
+           print '  %s' % failure
         job_server.destroy()
