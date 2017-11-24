@@ -92,10 +92,14 @@ class GriddedPreyCollection(BasePreyCollection):
         return result
 
 class Mizer(object):
-    def __init__(self, parameters={}, prey=(), temperature=None, recruitment_from_prey=False):
+    def __init__(self, parameters={}, prey=(), temperature=None, recruitment_from_prey=False, fabm_yaml_path=None):
         assert not pyfabm.hasError(), 'pyfabm library has called stop'
         #fabm_yaml_path = 'fabm.yaml'
-        fabm_yaml_fd, fabm_yaml_path = tempfile.mkstemp()
+        if fabm_yaml_path is None:
+            fabm_yaml_fd, fabm_yaml_path = tempfile.mkstemp()
+            fabm_yaml_file = os.fdopen(fabm_yaml_fd, 'w')
+        else:
+            fabm_yaml_file = open(fabm_yaml_path, 'w')
         mizer_params = dict(parameters)
         mizer_coupling = {'waste': 'zero_hz'}
         mizer_yaml = {'model': 'mizer/size_structured_population', 'parameters': mizer_params, 'coupling': mizer_coupling}
@@ -111,8 +115,8 @@ class Mizer(object):
             fabm_yaml['instances'][name] = {'model': 'mizer/prey', 'parameters': {'w': float(mass)}}
             mizer_coupling['Nw_prey%i' % iprey] = '%s/Nw' % name
         mizer_params['nprey'] = iprey
-        with os.fdopen(fabm_yaml_fd, 'w') as f:
-            yaml.dump(fabm_yaml, f, default_flow_style=False)
+        with fabm_yaml_file:
+            yaml.dump(fabm_yaml, fabm_yaml_file, default_flow_style=False)
 
         self.fabm_model = pyfabm.Model(fabm_yaml_path)
 
