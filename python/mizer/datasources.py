@@ -62,16 +62,23 @@ class TimeSeries(ValueProvider):
                 self.long_name = ncvar.long_name
                 self.units = ncvar.units
             else:
-                namespace = {}
-                dimensions = None
-                for name, ncvar in nc.variables.items():
-                    if name in variable_name:
-                        vardims, namespace[name] = getData(ncvar)
-                        assert dimensions is None or dimensions == vardims
-                        dimensions = vardims
-                self.data = eval(variable_name, namespace)*scale_factor
+                class NcDict(object):
+                    def __init__(self, nc):
+                        self.nc = nc
+                        self.cache = {}
+                    def __getitem__(self, key):
+                        if key not in self.cache:
+                            ncvar = self.nc.variables[key]
+                            final_dims, self.cache[key] = getData(ncvar)
+                        return self.cache[key]
+                    def __contains__(self, key):
+                        return key in self.nc.variables
+
+                self.data = eval(variable_name, {}, NcDict(nc))*scale_factor
                 self.long_name = variable_name
                 self.units = 'unknown'
+                dimensions = ()
+                assert self.data.shape == self.times.shape, 'Unexpected shape for %s: got %s, expected %s' % (variable_name, self.data.shape, self.times.shape)
             if scale_factor != 1.0:
                 self.units = '%s*%s' % (scale_factor, self.units)
             if weights is not None:
