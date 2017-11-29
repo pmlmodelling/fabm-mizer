@@ -177,7 +177,7 @@ contains
       call self%get_parameter(self%R_max, 'R_max','# yr-1','maximum recruitment flux', minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    end select
 
-   call self%get_parameter(fishing_type,'fishing_type','',       'fishing regime (0: none, 1: constant, 2: mizer)',default=0,      minimum=0, maximum=2)
+   call self%get_parameter(fishing_type,'fishing_type','',       'fishing regime (0: none, 1: constant, 2: logistic)',default=0,      minimum=0, maximum=2)
    if (fishing_type > 0) then
       call self%get_parameter(w_minF,     'w_minF',     'g',        'minimum weight for fishing selectivity',        default=0.0_rk, minimum=0.0_rk)
       call self%get_parameter(F,          'F',          'yr-1',     'fishing effort',                                default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
