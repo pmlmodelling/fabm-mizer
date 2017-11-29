@@ -92,13 +92,29 @@ class GriddedPreyCollection(BasePreyCollection):
         return result
 
 class Mizer(object):
-    def __init__(self, parameters={}, prey=(), temperature=None, recruitment_from_prey=False):
-        assert not pyfabm.hasError(), 'pyfabm library has called stop'
+    def __init__(self, parameters={}, prey=(), temperature=None, recruitment_from_prey=False, fabm_yaml_path=None, depth=None, initial_density=1.):
+        self.temperature_provider = None
+        if temperature is not None:
+            self.temperature_provider = datasources.asValueProvider(temperature)
+        self.depth_provider = None
+        if depth is not None:
+            self.depth_provider = datasources.asValueProvider(depth)
+
+        assert not pyfabm.hasError(), 'pyfabm library has crashed previously (stop has been called).'
         #fabm_yaml_path = 'fabm.yaml'
-        fabm_yaml_fd, fabm_yaml_path = tempfile.mkstemp()
+        if fabm_yaml_path is None:
+            fabm_yaml_fd, fabm_yaml_path = tempfile.mkstemp()
+            fabm_yaml_file = os.fdopen(fabm_yaml_fd, 'w')
+        else:
+            fabm_yaml_file = open(fabm_yaml_path, 'w')
         mizer_params = dict(parameters)
+        if depth is not None:
+            mizer_params['biomass_has_prey_unit'] = False
         mizer_coupling = {'waste': 'zero_hz'}
-        mizer_yaml = {'model': 'mizer/size_structured_population', 'parameters': mizer_params, 'coupling': mizer_coupling}
+        mizer_initialization = {}
+        for iclass in range(mizer_params['nclass']):
+            mizer_initialization['Nw%i' % (iclass+1,)] = initial_density/mizer_params['nclass']
+        mizer_yaml = {'model': 'mizer/size_structured_population', 'parameters': mizer_params, 'coupling': mizer_coupling, 'initialization': mizer_initialization}
         fabm_yaml = {'instances': {'fish': mizer_yaml}}
 
         if not isinstance(prey, BasePreyCollection):
@@ -111,10 +127,11 @@ class Mizer(object):
             fabm_yaml['instances'][name] = {'model': 'mizer/prey', 'parameters': {'w': float(mass)}}
             mizer_coupling['Nw_prey%i' % iprey] = '%s/Nw' % name
         mizer_params['nprey'] = iprey
-        with os.fdopen(fabm_yaml_fd, 'w') as f:
-            yaml.dump(fabm_yaml, f, default_flow_style=False)
+        with fabm_yaml_file:
+            yaml.dump(fabm_yaml, fabm_yaml_file, default_flow_style=False)
 
         self.fabm_model = pyfabm.Model(fabm_yaml_path)
+        assert not pyfabm.hasError(), 'pyfabm library failed during initialization'
 
         self.prey_indices = numpy.empty((iprey,), dtype=int)
         for iprey, name in enumerate(self.prey.names):
@@ -142,12 +159,14 @@ class Mizer(object):
         # Used to convert between depth-integrated fluxes and depth-explicit fluxes (not used if prey is prescribed)
         self.fabm_model.findDependency('bottom_depth').value = 1.
 
-        self.temperature_provider = None
         if temperature is not None:
-            self.temperature_provider = datasources.asValueProvider(temperature)
             self.temperature = self.fabm_model.findDependency('temperature')
             self.temperature.value = self.temperature_provider.mean()
             assert self.temperature.value > -10. and self.temperature.value < 40., 'Invalid temperature mean (%s)' % self.temperature.value
+        if depth is not None:
+            self.prey_per_biomass = self.fabm_model.findDependency('fish/biomass_to_prey')
+            self.prey_per_biomass.value = 1./self.depth_provider.mean()
+            print('Mean depth: %.1f m' % (1./self.prey_per_biomass.value))
 
         # Verify the model is ready to be used
         assert self.fabm_model.checkReady(), 'One or more model dependencies have not been fulfilled.'
@@ -160,26 +179,41 @@ class Mizer(object):
         self.recruitment_from_prey = recruitment_from_prey
 
     def run(self, t, verbose=False, spinup=0, save_spinup=False, initial_state=None):
-        # Shortcuts to objects used during time integration
-        state = self.fabm_model.state
-        getRates = self.fabm_model.getRates
         if initial_state is None:
             initial_state = self.initial_state
 
+        # Shortcuts to objects used during time integration
+        state = self.fabm_model.state
+        getRates = self.fabm_model.getRates
+        depth_provider = self.depth_provider
+        temperature= self.temperature
+        temperature_provider = self.temperature_provider
+        prey_per_biomass = self.prey_per_biomass
+        prey = self.prey
+        prey_indices = self.prey_indices
+        ibin0 = self.bin_indices[0]
+        recruitment_from_prey = self.recruitment_from_prey
+        predbin_per_preybin = self.log10bin_width/self.prey.delta_log10mass
+
         # Build list of indices of state variables that must be kept constant.
-        iconstant_states = set(self.prey_indices)
-        if self.recruitment_from_prey:
-            iconstant_states.add(self.bin_indices[0])
+        iconstant_states = set(prey_indices)
+        if recruitment_from_prey:
+            iconstant_states.add(ibin0)
         iconstant_states = list(sorted(iconstant_states))
 
         def dy(y, current_time):
             state[:] = y
             if not in_spinup:
-                state[self.prey_indices] = self.prey.getValues(current_time)
-                if self.temperature is not None:
-                    self.temperature.value = self.temperature_provider.get(current_time)
-                if self.recruitment_from_prey:
-                    state[self.bin_indices[0]] = state[self.prey_indices].mean()*self.log10bin_width/self.prey.delta_log10mass
+                current_prey = prey.getValues(current_time)
+                state[prey_indices] = current_prey
+                if temperature is not None:
+                    temperature.value = temperature_provider.get(current_time)
+                if depth_provider is not None:
+                    prey_per_biomass.value = 1./depth_provider.get(current_time)
+                if recruitment_from_prey:
+                    state[ibin0] = current_prey.mean()*predbin_per_preybin
+                    if depth_provider is not None:
+                        state[ibin0] /= prey_per_biomass.value
             rates = getRates()*86400
             rates[iconstant_states] = 0.
             return rates
@@ -191,11 +225,15 @@ class Mizer(object):
         if spinup > 0:
             in_spinup = True
             t_spinup = t[0] - numpy.arange(0., 365.23*spinup, 1.)[::-1]
-            state[self.prey_indices] = self.prey.getMean()
-            if self.recruitment_from_prey:
-                state[self.bin_indices[0]] = state[self.prey_indices].mean()*self.log10bin_width/self.prey.delta_log10mass
-            if self.temperature is not None:
-                self.temperature.value = self.temperature_provider.mean()
+            state[prey_indices] = prey.getMean()
+            if temperature is not None:
+                temperature.value = temperature_provider.mean()
+            if depth_provider is not None:
+                prey_per_biomass.value = 1./depth_provider.mean()
+            if recruitment_from_prey:
+                state[ibin0] = state[prey_indices].mean()*predbin_per_preybin
+                if depth_provider is not None:
+                    state[ibin0] /= prey_per_biomass.value
             if verbose:
                 print('Spinning up from %s to %s' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
             y_spinup = scipy.integrate.odeint(dy, state, t_spinup)
@@ -209,9 +247,11 @@ class Mizer(object):
             return
 
         # Overwrite prey masses with imposed values.
-        y[:, self.prey_indices] = self.prey.getValues(t)
-        if self.recruitment_from_prey:
-            y[:, self.bin_indices[0]] = y[:, self.prey_indices].mean(axis=1)*self.log10bin_width/self.prey.delta_log10mass
+        y[:, prey_indices] = prey.getValues(t)
+        if recruitment_from_prey:
+            y[:, ibin0] = y[:, prey_indices].mean(axis=1)*predbin_per_preybin
+            if depth_provider is not None:
+                y[:, ibin0] *= depth_provider.get(t)
 
         if spinup > 0 and save_spinup:
             # Prepend spinup to results

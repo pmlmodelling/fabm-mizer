@@ -30,6 +30,22 @@ module mizer_size_structured_population
 
 !  default: all is private.
    private
+
+   type,extends(type_base_model),public :: type_scale_state
+      type (type_horizontal_dependency_id),         allocatable :: id_state(:)
+      type (type_horizontal_dependency_id)                      :: id_scale_factor
+      type (type_horizontal_diagnostic_variable_id),allocatable :: id_scaled_state(:)
+   contains
+      procedure :: do_bottom => scale_state_do_bottom
+   end type type_scale_state
+
+   type,extends(type_base_model),public :: type_scale_rate
+      type (type_horizontal_dependency_id),allocatable :: id_rate(:)
+      type (type_horizontal_dependency_id)             :: id_inv_scale_factor
+      type (type_bottom_state_variable_id),allocatable :: id_state(:)
+   contains
+      procedure :: do_bottom => scale_rate_do_bottom
+   end type type_scale_rate
 !
 ! !PUBLIC DERIVED TYPES:
    type,extends(type_base_model),public :: type_size_structured_population
@@ -45,6 +61,7 @@ module mizer_size_structured_population
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_f(:)               ! Functional response per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_g(:)               ! Specific growth rate per size class
       type (type_dependency_id)                                 :: id_T                  ! Temperature
+      type (type_horizontal_dependency_id)                      :: id_biomass_to_prey    ! Biomass-to-prey scale factor
 
       ! Number of size classes and prey
       integer :: nclass
@@ -110,7 +127,7 @@ contains
 !
 ! !LOCAL VARIABLES:
    integer            :: iclass, iprey
-   logical            :: cannibalism
+   logical            :: cannibalism, biomass_has_prey_unit
    real(rk)           :: delta_logw
    real(rk)           :: k_vb,n,q,p,w_mat,w_inf,gamma,h,ks,f0,z0
    real(rk)           :: z0pre,z0exp,w_s,z_s
@@ -118,9 +135,12 @@ contains
    real(rk)           :: T_ref
    real(rk)           :: S1,S2,F,w_minF
    integer            :: z0_type
+   integer            :: fishing_type
    character(len=10)  :: strindex
    real(rk),parameter :: pi = 4*atan(1.0_rk)
    real(rk),parameter :: sec_per_year = 86400*365.2425_rk
+   class(type_scale_state), pointer :: scale_state
+   class(type_scale_rate),  pointer :: scale_rate
 !EOP
 !-----------------------------------------------------------------------
 !BOC
@@ -157,11 +177,17 @@ contains
       call self%get_parameter(self%R_max, 'R_max','# yr-1','maximum recruitment flux', minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    end select
 
-   call self%get_parameter(w_minF,     'w_minF',     'g',        'minimum weight for fishing selectivity',        default=0.0_rk, minimum=0.0_rk)
-   call self%get_parameter(S1,         'S1',         '-',        'offset for fishing selectivity exponent',       default=0.0_rk, minimum=0.0_rk)
-   call self%get_parameter(S2,         'S2',         'g-1',      'scale factor for fishing selectivity exponent', default=0.0_rk, minimum=0.0_rk)
-   call self%get_parameter(F,          'F',          'yr-1',     'fishing effort',                                default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+   call self%get_parameter(fishing_type,'fishing_type','',       'fishing regime (0: none, 1: constant, 2: mizer)',default=0,      minimum=0, maximum=2)
+   if (fishing_type > 0) then
+      call self%get_parameter(w_minF,     'w_minF',     'g',        'minimum weight for fishing selectivity',        default=0.0_rk, minimum=0.0_rk)
+      call self%get_parameter(F,          'F',          'yr-1',     'fishing effort',                                default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+   end if
+   if (fishing_type == 2) then
+      call self%get_parameter(S1,         'S1',         '-',        'offset for fishing selectivity exponent',       default=0.0_rk, minimum=0.0_rk)
+      call self%get_parameter(S2,         'S2',         'g-1',      'scale factor for fishing selectivity exponent', default=0.0_rk, minimum=0.0_rk)
+   end if
    call self%get_parameter(cannibalism,'cannibalism','',         'whether to enable intraspecific predation', default=.true.)
+   if (cannibalism) call self%get_parameter(biomass_has_prey_unit, 'biomass_has_prey_unit', '', 'biomass has the same unit as prey', default=.true.)
 
    call self%get_parameter(self%T_dependence, 'T_dependence', '', 'temperature dependence (0: none, 1: Arrhenius)', default=0)
    select case (self%T_dependence)
@@ -179,7 +205,7 @@ contains
    ! Pre-factor for volumetric search rate (Eq M2)
    gamma = f0*h*self%beta**(2-lambda)/((1-f0)*sqrt(2*pi)*kappa*self%sigma)
    !gamma = f0*h*self%beta**(2-lambda)/((1-f0)*sqrt(2*pi)*kappa*self%sigma*exp((lambda-2)**2 * self%sigma**2 / 2)) ! add exp term taken from actual R code
-   call self%get_parameter(gamma, 'gamma', 'yr-1 g^(-q)', 'pre-factor for volumetric search rate', minimum=0.0_rk, default=gamma*sec_per_year, scale_factor=1._rk/sec_per_year)
+   call self%get_parameter(gamma, 'gamma', 'PV yr-1 g^(-q)', 'pre-factor for volumetric search rate', minimum=0.0_rk, default=gamma*sec_per_year, scale_factor=1._rk/sec_per_year)
 
    ! Allow user override of standard metabolism pre-factor (e.g., Blanchard community size spectrum model has ks=0)
    call self%get_parameter(ks, 'ks', 'yr-1 g^(-p)', 'pre-factor for standard metabolism', minimum=0.0_rk, default=0.2_rk*h*sec_per_year, scale_factor=1._rk/sec_per_year)
@@ -205,7 +231,7 @@ contains
    allocate(self%F(self%nclass))
    allocate(self%psi(self%nclass))
    allocate(self%V(self%nclass))
-   self%V(:) = gamma*self%w**(q-1)      ! specific volumetric search rate (specific, hence the -1!)
+   self%V(:) = gamma*self%w**(q-1)      ! specific volumetric search rate [m3 s-1 g-1] (mass-specific, hence the -1!)
    self%I_max(:) = h*self%w**(n-1)      ! specific maximum ingestion rate [s-1]; Eq M4, but specific, hence the -1!
    self%std_metab(:) = ks*self%w**(p-1) ! specific metabolism [s-1]; second term in Eq M7, but specific, hence the -1!
    select case (z0_type)
@@ -219,10 +245,22 @@ contains
    else
       self%mu_s = 0
    end if
+
+   ! Fishing mortality
    self%F = 0.0_rk
-   do iclass=1,self%nclass
-      if (self%w(iclass)>w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))  ! fishing mortality [s-1]; Eqs M13 and M14 combined
-   end do
+   select case (fishing_type)
+   case (1)
+      ! constant
+      do iclass=1,self%nclass
+         if (self%w(iclass)>w_minF) self%F(iclass) = F
+      end do
+   case (2)
+      ! mizer fishing mortality [s-1]; Eqs M13 and M14 combined
+      do iclass=1,self%nclass
+         if (self%w(iclass)>w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))
+      end do
+   end select
+
    if (w_mat==0.0_rk) then
       ! No explicit reproduction as in original Blanchard community size spectrum model. Recruitment will be constant.
       self%psi(:) = 0
@@ -264,7 +302,7 @@ contains
    allocate(self%id_Nw_prey(self%nprey))
    do iprey=1,self%nprey
       write (strindex,'(i0)') iprey
-      call self%register_bottom_state_dependency(self%id_Nw_prey(iprey),'Nw_prey'//trim(strindex),'g m-2','biomass of prey '//trim(strindex))
+      call self%register_bottom_state_dependency(self%id_Nw_prey(iprey),'Nw_prey'//trim(strindex),'g PV-1','biomass of prey '//trim(strindex))
    end do
 
    ! Allocate size-class-specific identifiers for abundance state variable and diagnostics.
@@ -283,14 +321,55 @@ contains
       ! Register this size class' contribution to total mass in the system (for mass conservation checks)
       call self%add_to_aggregate_variable(total_mass,self%id_Nw(iclass))
 
-      ! If population is cannibalistic, add this size class as one of the prey (after the user-specified prey set).
-      if (cannibalism) call self%request_coupling(self%id_Nw_prey(self%nprey-self%nclass+iclass),'Nw'//trim(strindex))
-
       ! Register size-class-specific diagnostics
       call self%register_diagnostic_variable(self%id_reproduction(iclass),'reproduction'//trim(strindex),'g m-2 d-1','allocation to reproduction in size class '//trim(strindex),         source=source_do_bottom)
       call self%register_diagnostic_variable(self%id_f(iclass),           'f'//trim(strindex),           '-',        'functional response of size class '//trim(strindex),                source=source_do_bottom)
       call self%register_diagnostic_variable(self%id_g(iclass),           'g'//trim(strindex),           'd-1',      'specific growth rate of individuals in size class '//trim(strindex),source=source_do_bottom)
    end do
+
+   ! If population is cannibalistic, add this size class as one of the prey (after the user-specified prey set).
+   if (cannibalism) then
+       if (.not.biomass_has_prey_unit) then
+           ! Biomass needs to be converted to prey unit (and the rate of change due to predation needs to be converted back)
+           call self%register_dependency(self%id_biomass_to_prey, 'biomass_to_prey', '', 'biomass-to-prey scale factor')
+
+           ! Set up submodel that calculates prey concentrations (often g m-3) from internal biomass unit (often g m-2)
+           allocate(scale_state)
+           call self%add_child(scale_state, 'biomass_as_prey', configunit=-1)
+           allocate(scale_state%id_state(self%nclass))
+           allocate(scale_state%id_scaled_state(self%nclass))
+           call scale_state%register_dependency(scale_state%id_scale_factor, 'scale_factor')
+           call scale_state%request_coupling(scale_state%id_scale_factor, '../biomass_to_prey')
+
+           ! Set up submodel that translates the change in prey concentration (often g m-3) to the change in internal biomass unit (often g m-2)
+           allocate(scale_rate)
+           call self%add_child(scale_rate, 'change_in_biomass_as_prey', configunit=-1)
+           allocate(scale_rate%id_rate(self%nclass))
+           allocate(scale_rate%id_state(self%nclass))
+           call scale_rate%register_dependency(scale_rate%id_inv_scale_factor, 'inv_scale_factor')
+           call scale_rate%request_coupling(scale_rate%id_inv_scale_factor, '../biomass_to_prey')
+
+           do iclass=1,self%nclass
+               write (strindex,'(i0)') iclass
+
+               call scale_state%register_dependency(scale_state%id_state(iclass), 'bm'//trim(strindex), '', 'biomass '//trim(strindex))
+               call scale_state%request_coupling(scale_state%id_state(iclass), '../Nw'//trim(strindex))
+               call scale_state%register_diagnostic_variable(scale_state%id_scaled_state(iclass), 'c'//trim(strindex), 'g PV-1', 'biomass '//trim(strindex)//' in prey units', act_as_state_variable=.true., output=output_none)
+               call self%set_variable_property(scale_state%id_scaled_state(iclass),'particle_mass',self%w(iclass))
+               call self%request_coupling(self%id_Nw_prey(self%nprey-self%nclass+iclass),'biomass_as_prey/c'//trim(strindex))
+
+               call scale_rate%register_dependency(scale_rate%id_rate(iclass), 'sms'//trim(strindex), 'g PV-1 s-1', 'change in concentration '//trim(strindex))
+               call scale_rate%request_coupling(scale_rate%id_rate(iclass), 'biomass_as_prey/c'//trim(strindex)//'_sms_tot')
+               call scale_rate%register_state_dependency(scale_rate%id_state(iclass), 'bm'//trim(strindex), '', 'biomass '//trim(strindex))
+               call scale_rate%request_coupling(scale_rate%id_state(iclass), '../Nw'//trim(strindex))
+           end do
+        else
+           do iclass=1,self%nclass
+               write (strindex,'(i0)') iclass
+               call self%request_coupling(self%id_Nw_prey(self%nprey-self%nclass+iclass),'Nw'//trim(strindex))
+           end do
+        end if
+    end if
 
    allocate(self%phi(self%nprey,self%nclass))
 
@@ -342,12 +421,15 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey
-      real(rk) :: E_e,E_a,f,total_reproduction,T_lim,temp,g_tot,R,R_p,nflux(0:self%nclass)
+      real(rk) :: prey_per_biomass,E_e,E_a,f,total_reproduction,T_lim,temp,g_tot,R,R_p,nflux(0:self%nclass)
       real(rk),dimension(self%nprey)  :: Nw_prey,prey_loss
       real(rk),dimension(self%nclass) :: Nw,I,maintenance,g,mu,reproduction
       real(rk), parameter :: delta_t = 12._rk/86400
 
       _HORIZONTAL_LOOP_BEGIN_
+      
+         prey_per_biomass = 1
+         if (_VARIABLE_REGISTERED_(self%id_biomass_to_prey)) _GET_HORIZONTAL_(self%id_biomass_to_prey, prey_per_biomass)
 
          ! Retrieve size-class-specific abundances
          do iclass=1,self%nclass
@@ -372,14 +454,15 @@ contains
          ! This computes total ingestion per size class (over all prey), and total loss per prey type (over all size classes)
          prey_loss = 0.0_rk
          do iclass=1,self%nclass
-            ! Compute total prey availability (mass summed over all prey, scaled with prey-specific preference)
+            ! Compute total prey availability (concentration summed over all prey, scaled with prey-specific preference)
+            ! Units: g m-3
             E_a = sum(self%phi(:,iclass)*Nw_prey)
 #ifndef NDEBUG
             if (isnan(E_a)) &
                call self%fatal_error('do_bottom','E_a is nan')
 #endif
 
-            ! Compute actual encounter (availability per volume times volumetric search rate)
+            ! Compute actual encounter (g prey s-1 g-1): availability per volume (g prey m-3) times mass-specific volumetric search rate (m3 g-1 s-1)
             E_e = self%V(iclass)*E_a ! Eq M3
 
             ! Compute ingestion rate (g prey s-1 g-1) - per predator biomass!
@@ -391,8 +474,10 @@ contains
                call self%fatal_error('do_bottom','ingestion is nan')
 #endif
 
-            ! Account for this size class' ingestion in specific loss rate of all prey: from (g s-1 #-1) to (s-1)
-            prey_loss(:) = prey_loss(:) + I(iclass)/E_a*self%phi(:,iclass)*Nw(iclass)
+            ! Account for this size class' ingestion in specific loss rate of all prey
+            ! Units go from (g prey s-1 g-1) to (s-1) - we divide by prey and multiply by predator,
+            ! and correct for any difference in spatial units (e.g., prey in m-3, predator in m-2) by multiplying with prey_per_biomass.
+            prey_loss(:) = prey_loss(:) + I(iclass)/E_a*self%phi(:,iclass)*Nw(iclass)*prey_per_biomass
          end do
 
 #ifndef NDEBUG
@@ -450,6 +535,7 @@ contains
          nflux(0) = R
 
          ! Send prey consumption to FABM (combined impact of all size classes, per prey type)
+         ! Here we convert specific prey losses to absolute prey losses by multiplying with prey biomass.
          do iprey=1,self%nprey
             _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey),-prey_loss(iprey)*Nw_prey(iprey))
          end do
@@ -471,6 +557,38 @@ contains
       _HORIZONTAL_LOOP_END_
 
    end subroutine do_bottom
+
+   subroutine scale_state_do_bottom(self,_ARGUMENTS_DO_BOTTOM_)
+      class (type_scale_state),intent(in) :: self
+      _DECLARE_ARGUMENTS_DO_BOTTOM_
+
+      integer :: iclass
+      real(rk) :: scale_factor, state
+
+      _HORIZONTAL_LOOP_BEGIN_
+         _GET_HORIZONTAL_(self%id_scale_factor,scale_factor)
+         do iclass=1,size(self%id_state)
+            _GET_HORIZONTAL_(self%id_state(iclass),state)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_scaled_state(iclass),state*scale_factor)
+         end do
+      _HORIZONTAL_LOOP_END_
+   end subroutine scale_state_do_bottom
+
+   subroutine scale_rate_do_bottom(self,_ARGUMENTS_DO_BOTTOM_)
+      class (type_scale_rate),intent(in) :: self
+      _DECLARE_ARGUMENTS_DO_BOTTOM_
+
+      integer :: iclass
+      real(rk) :: inv_scale_factor, rate
+
+      _HORIZONTAL_LOOP_BEGIN_
+         _GET_HORIZONTAL_(self%id_inv_scale_factor,inv_scale_factor)
+         do iclass=1,size(self%id_state)
+            _GET_HORIZONTAL_(self%id_rate(iclass),rate)
+            _SET_BOTTOM_ODE_(self%id_state(iclass),rate/inv_scale_factor)
+         end do
+      _HORIZONTAL_LOOP_END_
+   end subroutine scale_rate_do_bottom
 
 !-----------------------------------------------------------------------
 
