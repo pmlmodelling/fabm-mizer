@@ -242,7 +242,20 @@ class Mizer(object):
         if verbose:
             print('Time integrating from %s to %s' % (num2date(t[0]), num2date(t[-1])))
         in_spinup = False
-        y = scipy.integrate.odeint(dy, state, t)
+        if True:
+            i = 0
+            dt = 1./24
+            current_t = t[0]
+            current_y = numpy.array(state)
+            y = numpy.empty((t.size, state.size))
+            while i < t.size:
+                if current_t >= t[i]:
+                    y[i, :] = current_y
+                    i += 1
+                current_y += dt*dy(current_y, current_t)
+                current_t += dt
+        else:
+            y = scipy.integrate.odeint(dy, state, t)
         if pyfabm.hasError():
             return
 
