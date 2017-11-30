@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import os.path
 import numpy
 import netCDF4
 from matplotlib import pyplot
@@ -27,9 +28,10 @@ class Constant(ValueProvider):
         return self.value
 
 class TimeSeries(ValueProvider):
-    def __init__(self, path, variable_name, scale_factor=1.0, weights=None, plot=False, time_name='time', stop=None, **dim2index):
+    def __init__(self, path, variable_name, scale_factor=1.0, weights=None, plot=False, time_name='time', stop=None, minimum=None, maximum=None, **dim2index):
         ValueProvider.__init__(self)
 
+        print('Reading %s from %s' % (variable_name, os.path.relpath(path)))
         def getData(ncvar):
             final_dims, slc, location = [], [], []
             for dim in ncvar.dimensions:
@@ -39,8 +41,8 @@ class TimeSeries(ValueProvider):
                 else:
                     slc.append(slice(None))
                     final_dims.append(dim)
-                    location.append('%s=all' % (dim,))
-            print('Reading %s from %s at %s' % (ncvar.name, path, ', '.join(location)))
+                    location.append('%s=:' % (dim,))
+            print('  %s [%s]' % (ncvar.name, ', '.join(location)))
             vardata = ncvar[slc]
             valid = numpy.isfinite(vardata)
             assert valid.all(), 'Variable %s in %s contains non-finite values (NaN?). Data: %s. First problem time: %s' % (path, ncvar.name, vardata, num2date(self.times[numpy.logical_not(valid)][0]))
@@ -108,6 +110,11 @@ class TimeSeries(ValueProvider):
                     assert False, 'No index (or "sum", "mean") provided for dimension %s' % dimname
         valid = numpy.isfinite(self.data)
         assert valid.all(), 'Variable %s in %s contains non-finite values (NaN?). Data: %s. First problem time: %s' % (path, variable_name, self.data, num2date(self.times[numpy.logical_not(valid)][0]))
+        minval, maxval = self.data.min(), self.data.max()
+        print('  Time range: %s - %s' % (num2date(self.times[0]), num2date(self.times[-1])))
+        print('  Value range: %.3g - %.3g' % (minval, maxval))
+        assert minimum is None or minval >= minimum, 'Minimum value %s lies below prescribed minimum of %s' % (minval, minimum)
+        assert maximum is None or maxval <= maximum, 'Maximum value %s lies above prescribed maximum of %s' % (maxval, maximum)
         if plot:
             self.plot()
 
