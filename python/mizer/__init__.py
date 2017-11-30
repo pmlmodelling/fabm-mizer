@@ -246,7 +246,8 @@ class Mizer(object):
             i = 0
             dt = 1./24
             y = numpy.empty((t.size, state.size))
-            ts = t[0] + numpy.arange(2 + int(round((t[-1] - t[0]) / dt))) * dt
+            ts = t[0] + numpy.arange(1 + int(round((t[-1] - t[0]) / dt))) * dt
+            assert ts[-1] >= t[-1]
             preys = prey.getValues(ts)
             if recruitment_from_prey:
                 eggs = preys.mean(axis=1)*predbin_per_preybin
