@@ -245,15 +245,30 @@ class Mizer(object):
         if True:
             i = 0
             dt = 1./24
-            current_t = t[0]
-            current_y = numpy.array(state)
             y = numpy.empty((t.size, state.size))
-            while i < t.size:
+            ts = t[0] + numpy.arange(2 + int(round((t[-1] - t[0]) / dt))) * dt
+            preys = prey.getValues(ts)
+            if recruitment_from_prey:
+                eggs = preys.mean(axis=1)*predbin_per_preybin
+            if depth_provider is not None:
+                invdepths = 1./depth_provider.get(ts)
+                eggs[:] /= invdepths
+            if temperature is not None:
+                temperatures = temperature_provider.get(ts)
+            for j, current_t in enumerate(ts):
                 if current_t >= t[i]:
-                    y[i, :] = current_y
+                    y[i, :] = state
                     i += 1
-                current_y += dt*dy(current_y, current_t)
-                current_t += dt
+                state[prey_indices] = preys[j, :]
+                if temperature is not None:
+                    temperature.value = temperatures[j]
+                if depth_provider is not None:
+                    prey_per_biomass.value = invdepths[j]
+                if recruitment_from_prey:
+                    state[ibin0] = eggs[j]
+                rates = getRates()*86400
+                rates[iconstant_states] = 0.
+                state += dt*rates
         else:
             y = scipy.integrate.odeint(dy, state, t)
         if pyfabm.hasError():
