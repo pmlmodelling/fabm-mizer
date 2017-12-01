@@ -92,7 +92,10 @@ class GriddedPreyCollection(BasePreyCollection):
         return result
 
 class Mizer(object):
-    def __init__(self, parameters={}, prey=(), temperature=None, recruitment_from_prey=False, fabm_yaml_path=None, depth=None, initial_density=1.):
+    def __init__(self, parameters={}, prey=(), temperature=None, recruitment_from_prey=False, fabm_yaml_path=None, depth=None, initial_density=1., verbose=True):
+        self.parameters = dict(parameters)
+        self.initial_density = initial_density
+
         self.temperature_provider = None
         if temperature is not None:
             self.temperature_provider = datasources.asValueProvider(temperature)
@@ -166,17 +169,56 @@ class Mizer(object):
         if depth is not None:
             self.prey_per_biomass = self.fabm_model.findDependency('fish/biomass_to_prey')
             self.prey_per_biomass.value = 1./self.depth_provider.mean()
-            print('Mean depth: %.1f m' % (1./self.prey_per_biomass.value))
+            if verbose:
+                print('Mean depth: %.1f m' % (1./self.prey_per_biomass.value))
 
         # Verify the model is ready to be used
         assert self.fabm_model.checkReady(), 'One or more model dependencies have not been fulfilled.'
 
-        for parameter in self.fabm_model.parameters:
-            if parameter.path.startswith('fish/'):
-                print('%s: %s %s' % (parameter.long_name, parameter.value, parameter.units))
+        if verbose:
+            for parameter in self.fabm_model.parameters:
+                if parameter.path.startswith('fish/'):
+                    print('%s: %s %s' % (parameter.long_name, parameter.value, parameter.units))
 
         self.initial_state = numpy.copy(self.fabm_model.state)
         self.recruitment_from_prey = recruitment_from_prey
+
+    def get_msy(self, t, spinup=50, initial_state=None):
+        if initial_state is None:
+            initial_state = self.initial_state
+
+        multiplier = numpy.ones((initial_state.size,))*86400
+        if self.recruitment_from_prey:
+            multiplier[self.bin_indices[0]] = 0
+        multiplier[self.prey_indices] = 0
+
+        for ilandings, variable in enumerate(self.fabm_model.state_variables):
+            if variable.path == 'fish/landings':
+                break
+
+        t_spinup = t[0] - numpy.arange(0., 365.23*spinup, 1.)[::-1]
+        initial_state = numpy.array(initial_state)
+        initial_state[self.prey_indices] = self.prey.getMean()
+        if self.recruitment_from_prey:
+            initial_state[self.bin_indices[0]] = initial_state[self.prey_indices].mean()*self.log10bin_width/self.prey.delta_log10mass
+            if self.depth_provider is not None:
+                initial_state[self.bin_indices[0]] /= self.prey_per_biomass.value
+
+        parameters = dict(self.parameters)
+        def landings(F):
+            def dy(y, current_time):
+                state[:] = y
+                return getRates()*multiplier
+            parameters['F'] = F
+            m = Mizer(parameters, self.prey, temperature=self.temperature_provider, recruitment_from_prey=self.recruitment_from_prey, depth=self.depth_provider, initial_density=self.initial_density, verbose=False)
+            if m.temperature_provider is not None:
+                m.temperature.value = m.temperature_provider.mean()
+            if m.depth_provider is not None:
+                m.prey_per_biomass.value = 1./m.depth_provider.mean()
+            state = m.fabm_model.state
+            getRates = m.fabm_model.getRates
+            y = scipy.integrate.odeint(dy, initial_state, t_spinup)
+            return y[-1, ilandings] - y[-3650, ilandings]
 
     def run(self, t, verbose=False, spinup=0, save_spinup=False, initial_state=None):
         if initial_state is None:
@@ -186,7 +228,7 @@ class Mizer(object):
         state = self.fabm_model.state
         getRates = self.fabm_model.getRates
         depth_provider = self.depth_provider
-        temperature= self.temperature
+        temperature = self.temperature
         temperature_provider = self.temperature_provider
         prey_per_biomass = self.prey_per_biomass
         prey = self.prey
@@ -206,7 +248,7 @@ class Mizer(object):
             if not in_spinup:
                 current_prey = prey.getValues(current_time)
                 state[prey_indices] = current_prey
-                if temperature is not None:
+                if temperature_provider is not None:
                     temperature.value = temperature_provider.get(current_time)
                 if depth_provider is not None:
                     prey_per_biomass.value = 1./depth_provider.get(current_time)
@@ -226,7 +268,7 @@ class Mizer(object):
             in_spinup = True
             t_spinup = t[0] - numpy.arange(0., 365.23*spinup, 1.)[::-1]
             state[prey_indices] = prey.getMean()
-            if temperature is not None:
+            if temperature_provider is not None:
                 temperature.value = temperature_provider.mean()
             if depth_provider is not None:
                 prey_per_biomass.value = 1./depth_provider.mean()
@@ -260,14 +302,14 @@ class Mizer(object):
                 invdepths = 1./depth_provider.get(ts)
                 assert (invdepths >= 0).all(), 'Minimum 1/depth < 0: %s' % (invdepths.min(),)
                 eggs[:] /= invdepths
-            if temperature is not None:
+            if temperature_provider is not None:
                 temperatures = temperature_provider.get(ts)
             for j, current_t in enumerate(ts):
                 if current_t >= t[i]:
                     y[i, :] = state
                     i += 1
                 state[prey_indices] = preys[j, :]
-                if temperature is not None:
+                if temperature_provider is not None:
                     temperature.value = temperatures[j]
                 if depth_provider is not None:
                     prey_per_biomass.value = invdepths[j]
