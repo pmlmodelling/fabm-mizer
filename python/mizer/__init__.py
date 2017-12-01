@@ -251,7 +251,7 @@ class Mizer(object):
             assert ts[-1] >= t[-1], 'Simulation ends at %s, which is before last desired output time %s.' % (ts[-1], t[-1])
             preys = prey.getValues(ts)
             assert (preys >= 0).all(), 'Minimum prey concentration < 0: %s' % (preys.min(),)
-            multiplier = numpy.ones((state.size,))
+            multiplier = numpy.ones((state.size,))*86400*dt
             multiplier[iconstant_states] = 0
             if recruitment_from_prey:
                 eggs = preys.mean(axis=1)*predbin_per_preybin
@@ -273,8 +273,7 @@ class Mizer(object):
                     prey_per_biomass.value = invdepths[j]
                 if recruitment_from_prey:
                     state[ibin0] = eggs[j]
-                rates = getRates()*86400
-                state += dt*rates*multiplier
+                state += getRates()*multiplier
         else:
             y = scipy.integrate.odeint(dy, state, t)
         if pyfabm.hasError():
