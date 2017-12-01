@@ -237,6 +237,7 @@ class Mizer(object):
             if verbose:
                 print('Spinning up from %s to %s' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
             y_spinup = scipy.integrate.odeint(dy, state, t_spinup)
+            #y_spinup = self.fabm_model.integrate(state_copy, t_spinup, dt=1./24.)
             state[:] = y_spinup[-1, :]
 
         if verbose:
@@ -247,12 +248,17 @@ class Mizer(object):
             dt = 1./24
             y = numpy.empty((t.size, state.size))
             ts = t[0] + numpy.arange(1 + int(round((t[-1] - t[0]) / dt))) * dt
-            assert ts[-1] >= t[-1]
+            assert ts[-1] >= t[-1], 'Simulation ends at %s, which is before last desired output time %s.' % (ts[-1], t[-1])
             preys = prey.getValues(ts)
+            assert (preys >= 0).all(), 'Minimum prey concentration < 0: %s' % (preys.min(),)
+            multiplier = numpy.ones((state.size,))
+            multiplier[iconstant_states] = 0
             if recruitment_from_prey:
                 eggs = preys.mean(axis=1)*predbin_per_preybin
+                assert (eggs >= 0).all(), 'Minimum egg density < 0: %s' % (eggs.min(),)
             if depth_provider is not None:
                 invdepths = 1./depth_provider.get(ts)
+                assert (invdepths >= 0).all(), 'Minimum 1/depth < 0: %s' % (invdepths.min(),)
                 eggs[:] /= invdepths
             if temperature is not None:
                 temperatures = temperature_provider.get(ts)
@@ -268,8 +274,7 @@ class Mizer(object):
                 if recruitment_from_prey:
                     state[ibin0] = eggs[j]
                 rates = getRates()*86400
-                rates[iconstant_states] = 0.
-                state += dt*rates
+                state += dt*rates*multiplier
         else:
             y = scipy.integrate.odeint(dy, state, t)
         if pyfabm.hasError():
