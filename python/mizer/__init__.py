@@ -7,6 +7,7 @@ import datetime
 
 import yaml
 import numpy
+import numpy.linalg
 import scipy.integrate
 from matplotlib import pyplot
 from matplotlib import animation
@@ -48,7 +49,7 @@ class PreyCollection(BasePreyCollection):
         return numpy.array([item.value_provider.mean() for item in self.items])
 
 class GriddedPreyCollection(BasePreyCollection):
-    def __init__(self, source):
+    def __init__(self, source, maximum_mass=None):
         BasePreyCollection.__init__(self)
         self.source = source
 
@@ -58,6 +59,8 @@ class GriddedPreyCollection(BasePreyCollection):
             min_prey_mass = current_min if min_prey_mass is None else min(min_prey_mass, current_min)
             current_max = prey_item.mass if isinstance(prey_item.mass, float) else prey_item.mass[1]
             max_prey_mass = current_max if max_prey_mass is None else max(max_prey_mass, current_max)
+        if maximum_mass is not None:
+            max_prey_mass = min(max_prey_mass, maximum_mass)
         self.delta_log10mass = 0.1
         prey_mass_bounds = numpy.arange(numpy.log10(min_prey_mass)-self.delta_log10mass/2, numpy.log10(max_prey_mass)+self.delta_log10mass, self.delta_log10mass)
         prey_mass_centers = (prey_mass_bounds[1:]+prey_mass_bounds[:-1])/2
@@ -73,7 +76,7 @@ class GriddedPreyCollection(BasePreyCollection):
                     left  = max(log10mass[0], prey_mass_bounds[ibin])
                     right = min(log10mass[1], prey_mass_bounds[ibin+1])
                     weights[ibin] = max(0., right-left)/(log10mass[1]-log10mass[0])
-            assert abs(weights.sum()-1.) < 1e-12, '%s: weights should add up to 1, but currently add up to %s' % (prey_item.name, weights.sum())
+                assert abs(weights.sum()-1.) < 1e-12 or maximum_mass < prey_item.mass[1], '%s: weights should add up to 1, but currently add up to %s' % (prey_item.name, weights.sum())
             self.prey_bin_weights.append(weights)
 
         self.names = ['prey%i' % i for i in range(len(prey_mass_centers))]
@@ -92,7 +95,7 @@ class GriddedPreyCollection(BasePreyCollection):
         return result
 
 class Mizer(object):
-    def __init__(self, parameters={}, prey=(), temperature=None, recruitment_from_prey=False, fabm_yaml_path=None, depth=None, initial_density=1., verbose=True):
+    def __init__(self, parameters={}, prey=(), temperature=None, recruitment_from_prey=0, fabm_yaml_path=None, depth=None, initial_density=1., verbose=True):
         self.parameters = dict(parameters)
         self.initial_density = initial_density
 
@@ -183,6 +186,135 @@ class Mizer(object):
         self.initial_state = numpy.copy(self.fabm_model.state)
         self.recruitment_from_prey = recruitment_from_prey
 
+    def run(self, t, verbose=False, spinup=0, save_spinup=False, initial_state=None, integration_method=0):
+        if initial_state is None:
+            initial_state = self.initial_state
+
+        # Shortcuts to objects used during time integration
+        state = self.fabm_model.state
+        getRates = self.fabm_model.getRates
+        checkState = self.fabm_model.checkState
+        depth_provider = self.depth_provider
+        temperature = self.temperature
+        temperature_provider = self.temperature_provider
+        prey_per_biomass = self.prey_per_biomass
+        prey = self.prey
+        prey_indices = self.prey_indices
+        ibin0 = self.bin_indices[0]
+        recruitment_from_prey = self.recruitment_from_prey
+        predbin_per_preybin = self.log10bin_width/self.prey.delta_log10mass
+
+        def getEggs(preys):
+            if recruitment_from_prey == 1:
+                return preys.mean(axis=-1) * predbin_per_preybin
+            elif recruitment_from_prey == 2:
+                A = numpy.vstack([numpy.log10(prey.masses), numpy.ones(preys.shape[-1])]).T
+                c, residuals, rank, s = numpy.linalg.lstsq(A, numpy.log10(preys.T))
+                return 10.**(c[0, ...]*numpy.log10(self.bin_masses[0]) + c[1, ...]) * predbin_per_preybin
+
+        # Build list of indices of state variables that must be kept constant.
+        iconstant_states = set(prey_indices)
+        if recruitment_from_prey:
+            iconstant_states.add(ibin0)
+        iconstant_states = list(sorted(iconstant_states))
+
+        def dy(y, current_time):
+            state[:] = y
+            checkState(repair=True)
+            if not in_spinup:
+                current_prey = prey.getValues(current_time)
+                state[prey_indices] = current_prey
+                if temperature_provider is not None:
+                    temperature.value = temperature_provider.get(current_time)
+                if depth_provider is not None:
+                    prey_per_biomass.value = 1./depth_provider.get(current_time)
+                if recruitment_from_prey:
+                    state[ibin0] = getEggs(current_prey)
+                    if depth_provider is not None:
+                        state[ibin0] /= prey_per_biomass.value
+            rates = getRates()*86400
+            rates[iconstant_states] = 0.
+            return rates
+
+        state[:] = initial_state
+
+        # Spin up with time-averaged prey abundances
+        t_spinup, y_spinup = None, None
+        if spinup > 0:
+            in_spinup = True
+            t_spinup = t[0] - numpy.arange(0., 365.23*spinup, 1.)[::-1]
+            state[prey_indices] = prey.getMean()
+            if temperature_provider is not None:
+                temperature.value = temperature_provider.mean()
+            if depth_provider is not None:
+                prey_per_biomass.value = 1./depth_provider.mean()
+            if recruitment_from_prey:
+                state[ibin0] = getEggs(state[prey_indices])
+                if depth_provider is not None:
+                    state[ibin0] /= prey_per_biomass.value
+            if verbose:
+                print('Spinning up from %s to %s' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
+            y_spinup = scipy.integrate.odeint(dy, state, t_spinup)
+            #y_spinup = self.fabm_model.integrate(state_copy, t_spinup, dt=1./24.)
+            state[:] = y_spinup[-1, :]
+
+        if verbose:
+            print('Time integrating from %s to %s' % (num2date(t[0]), num2date(t[-1])))
+        in_spinup = False
+        if integration_method == 0:
+            # Integrate with Forward Euler
+            ioutput = 0
+            dt = 1./24
+            y = numpy.empty((t.size, state.size))
+            ts = t[0] + numpy.arange(1 + int(round((t[-1] - t[0]) / dt))) * dt
+            assert ts[-1] >= t[-1], 'Simulation ends at %s, which is before last desired output time %s.' % (ts[-1], t[-1])
+            preys = prey.getValues(ts)
+            assert (preys >= 0).all(), 'Minimum prey concentration < 0: %s' % (preys.min(),)
+            multiplier = numpy.ones((state.size,))*86400*dt
+            multiplier[iconstant_states] = 0
+            if recruitment_from_prey:
+                eggs = getEggs(preys)
+            if depth_provider is not None:
+                invdepths = 1./depth_provider.get(ts)
+                assert (invdepths >= 0).all(), 'Minimum 1/depth < 0: %s' % (invdepths.min(),)
+                eggs[:] /= invdepths
+            if temperature_provider is not None:
+                temperatures = temperature_provider.get(ts)
+            for j, current_t in enumerate(ts):
+                state[prey_indices] = preys[j, :]
+                if temperature_provider is not None:
+                    temperature.value = temperatures[j]
+                if depth_provider is not None:
+                    prey_per_biomass.value = invdepths[j]
+                if recruitment_from_prey:
+                    state[ibin0] = eggs[j]
+                checkState(repair=True)
+                if current_t >= t[ioutput]:
+                    y[ioutput, :] = state
+                    ioutput += 1
+                state += getRates()*multiplier
+        else:
+            # Integrate with SciPy odeint
+            y = scipy.integrate.odeint(dy, state, t)
+        if pyfabm.hasError():
+            return
+
+        # Overwrite prey masses with imposed values.
+        y[:, prey_indices] = prey.getValues(t)
+        if recruitment_from_prey:
+            y[:, ibin0] = getEggs(y[:, prey_indices])
+            if depth_provider is not None:
+                y[:, ibin0] *= depth_provider.get(t)
+
+        if spinup > 0 and save_spinup:
+            # Prepend spinup to results
+            t = numpy.hstack((t_spinup[:-1], t))
+            y = numpy.vstack((y_spinup[:-1, :], y))
+
+        if verbose:
+            print('Done.')
+        return MizerResult(self, t, y)
+
     def get_msy(self, t, spinup=50, initial_state=None):
         if initial_state is None:
             initial_state = self.initial_state
@@ -219,123 +351,6 @@ class Mizer(object):
             getRates = m.fabm_model.getRates
             y = scipy.integrate.odeint(dy, initial_state, t_spinup)
             return y[-1, ilandings] - y[-3650, ilandings]
-
-    def run(self, t, verbose=False, spinup=0, save_spinup=False, initial_state=None):
-        if initial_state is None:
-            initial_state = self.initial_state
-
-        # Shortcuts to objects used during time integration
-        state = self.fabm_model.state
-        getRates = self.fabm_model.getRates
-        depth_provider = self.depth_provider
-        temperature = self.temperature
-        temperature_provider = self.temperature_provider
-        prey_per_biomass = self.prey_per_biomass
-        prey = self.prey
-        prey_indices = self.prey_indices
-        ibin0 = self.bin_indices[0]
-        recruitment_from_prey = self.recruitment_from_prey
-        predbin_per_preybin = self.log10bin_width/self.prey.delta_log10mass
-
-        # Build list of indices of state variables that must be kept constant.
-        iconstant_states = set(prey_indices)
-        if recruitment_from_prey:
-            iconstant_states.add(ibin0)
-        iconstant_states = list(sorted(iconstant_states))
-
-        def dy(y, current_time):
-            state[:] = y
-            if not in_spinup:
-                current_prey = prey.getValues(current_time)
-                state[prey_indices] = current_prey
-                if temperature_provider is not None:
-                    temperature.value = temperature_provider.get(current_time)
-                if depth_provider is not None:
-                    prey_per_biomass.value = 1./depth_provider.get(current_time)
-                if recruitment_from_prey:
-                    state[ibin0] = current_prey.mean()*predbin_per_preybin
-                    if depth_provider is not None:
-                        state[ibin0] /= prey_per_biomass.value
-            rates = getRates()*86400
-            rates[iconstant_states] = 0.
-            return rates
-
-        state[:] = initial_state
-
-        # Spin up with time-averaged prey abundances
-        t_spinup, y_spinup = None, None
-        if spinup > 0:
-            in_spinup = True
-            t_spinup = t[0] - numpy.arange(0., 365.23*spinup, 1.)[::-1]
-            state[prey_indices] = prey.getMean()
-            if temperature_provider is not None:
-                temperature.value = temperature_provider.mean()
-            if depth_provider is not None:
-                prey_per_biomass.value = 1./depth_provider.mean()
-            if recruitment_from_prey:
-                state[ibin0] = state[prey_indices].mean()*predbin_per_preybin
-                if depth_provider is not None:
-                    state[ibin0] /= prey_per_biomass.value
-            if verbose:
-                print('Spinning up from %s to %s' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
-            y_spinup = scipy.integrate.odeint(dy, state, t_spinup)
-            #y_spinup = self.fabm_model.integrate(state_copy, t_spinup, dt=1./24.)
-            state[:] = y_spinup[-1, :]
-
-        if verbose:
-            print('Time integrating from %s to %s' % (num2date(t[0]), num2date(t[-1])))
-        in_spinup = False
-        if True:
-            i = 0
-            dt = 1./24
-            y = numpy.empty((t.size, state.size))
-            ts = t[0] + numpy.arange(1 + int(round((t[-1] - t[0]) / dt))) * dt
-            assert ts[-1] >= t[-1], 'Simulation ends at %s, which is before last desired output time %s.' % (ts[-1], t[-1])
-            preys = prey.getValues(ts)
-            assert (preys >= 0).all(), 'Minimum prey concentration < 0: %s' % (preys.min(),)
-            multiplier = numpy.ones((state.size,))*86400*dt
-            multiplier[iconstant_states] = 0
-            if recruitment_from_prey:
-                eggs = preys.mean(axis=1)*predbin_per_preybin
-                assert (eggs >= 0).all(), 'Minimum egg density < 0: %s' % (eggs.min(),)
-            if depth_provider is not None:
-                invdepths = 1./depth_provider.get(ts)
-                assert (invdepths >= 0).all(), 'Minimum 1/depth < 0: %s' % (invdepths.min(),)
-                eggs[:] /= invdepths
-            if temperature_provider is not None:
-                temperatures = temperature_provider.get(ts)
-            for j, current_t in enumerate(ts):
-                if current_t >= t[i]:
-                    y[i, :] = state
-                    i += 1
-                state[prey_indices] = preys[j, :]
-                if temperature_provider is not None:
-                    temperature.value = temperatures[j]
-                if depth_provider is not None:
-                    prey_per_biomass.value = invdepths[j]
-                if recruitment_from_prey:
-                    state[ibin0] = eggs[j]
-                state += getRates()*multiplier
-        else:
-            y = scipy.integrate.odeint(dy, state, t)
-        if pyfabm.hasError():
-            return
-
-        # Overwrite prey masses with imposed values.
-        y[:, prey_indices] = prey.getValues(t)
-        if recruitment_from_prey:
-            y[:, ibin0] = y[:, prey_indices].mean(axis=1)*predbin_per_preybin
-            if depth_provider is not None:
-                y[:, ibin0] *= depth_provider.get(t)
-
-        if spinup > 0 and save_spinup:
-            # Prepend spinup to results
-            t = numpy.hstack((t_spinup[:-1], t))
-            y = numpy.vstack((y_spinup[:-1, :], y))
-
-        if verbose:
-            print('Done.')
-        return MizerResult(self, t, y)
 
 class MizerResult(object):
     def __init__(self, model, t, y):
