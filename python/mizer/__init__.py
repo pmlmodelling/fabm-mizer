@@ -263,23 +263,28 @@ class Mizer(object):
         in_spinup = False
         if integration_method == 0:
             # Integrate with Forward Euler
-            ioutput = 0
             dt = 1./24
-            y = numpy.empty((t.size, state.size))
+
+            # Prepare all inputs on time integration grid
             ts = t[0] + numpy.arange(1 + int(round((t[-1] - t[0]) / dt))) * dt
             assert ts[-1] >= t[-1], 'Simulation ends at %s, which is before last desired output time %s.' % (ts[-1], t[-1])
             preys = prey.getValues(ts)
             assert (preys >= 0).all(), 'Minimum prey concentration < 0: %s' % (preys.min(),)
             multiplier = numpy.ones((state.size,))*86400*dt
             multiplier[iconstant_states] = 0
-            if recruitment_from_prey:
-                eggs = getEggs(preys)
             if depth_provider is not None:
                 invdepths = 1./depth_provider.get(ts)
                 assert (invdepths >= 0).all(), 'Minimum 1/depth < 0: %s' % (invdepths.min(),)
-                eggs[:] /= invdepths
+            if recruitment_from_prey:
+                eggs = getEggs(preys)
+                if depth_provider is not None:
+                    eggs[:] /= invdepths
             if temperature_provider is not None:
                 temperatures = temperature_provider.get(ts)
+
+            # Time integration
+            ioutput = 0
+            y = numpy.empty((t.size, state.size))
             for j, current_t in enumerate(ts):
                 state[prey_indices] = preys[j, :]
                 if temperature_provider is not None:
@@ -301,10 +306,12 @@ class Mizer(object):
 
         # Overwrite prey masses with imposed values.
         y[:, prey_indices] = prey.getValues(t)
+        depth = None if depth_provider is None else depth_provider.get(t)
+        temperature = None if temperature_provider is None else temperature_provider.get(t)
         if recruitment_from_prey:
             y[:, ibin0] = getEggs(y[:, prey_indices])
             if depth_provider is not None:
-                y[:, ibin0] *= depth_provider.get(t)
+                y[:, ibin0] *= depth
 
         if spinup > 0 and save_spinup:
             # Prepend spinup to results
@@ -313,7 +320,7 @@ class Mizer(object):
 
         if verbose:
             print('Done.')
-        return MizerResult(self, t, y)
+        return MizerResult(self, t, y, temperature, depth)
 
     def get_msy(self, t, spinup=50, initial_state=None):
         if initial_state is None:
@@ -353,10 +360,12 @@ class Mizer(object):
             return y[-1, ilandings] - y[-3650, ilandings]
 
 class MizerResult(object):
-    def __init__(self, model, t, y):
+    def __init__(self, model, t, y, temperature, depth):
         self.model = model
         self.t = t
         self.y = y
+        self.temperature = temperature
+        self.depth = depth
         self.spectrum = y[:, self.model.bin_indices]
         self.biomass_density = self.spectrum/self.model.bin_widths
         self.abundance_density = self.spectrum/self.model.bin_widths/self.model.bin_masses
