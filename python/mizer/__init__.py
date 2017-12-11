@@ -21,6 +21,8 @@ except ImportError:
 
 import datasources
 
+EULER = 0
+
 class Prey(object):
     def __init__(self, name, mass, value):
         self.name = name
@@ -186,7 +188,7 @@ class Mizer(object):
         self.initial_state = numpy.copy(self.fabm_model.state)
         self.recruitment_from_prey = recruitment_from_prey
 
-    def run(self, t, verbose=False, spinup=0, save_spinup=False, initial_state=None, integration_method=0, dt=1/24.):
+    def run(self, t, verbose=False, spinup=0, save_spinup=False, initial_state=None, integration_method=EULER, dt=1/24.):
         if initial_state is None:
             initial_state = self.initial_state
 
@@ -208,8 +210,10 @@ class Mizer(object):
             if recruitment_from_prey == 1:
                 return preys.mean(axis=-1) * predbin_per_preybin
             elif recruitment_from_prey == 2:
-                A = numpy.vstack([numpy.log10(prey.masses), numpy.ones(preys.shape[-1])]).T
-                c, residuals, rank, s = numpy.linalg.lstsq(A, numpy.log10(preys.T))
+                minpreymass = self.bin_masses[0]/self.parameters['beta']**2
+                i = prey.masses.searchsorted(minpreymass)
+                A = numpy.vstack([numpy.log10(prey.masses[i:]), numpy.ones(prey.masses[i:].size)]).T
+                c, residuals, rank, s = numpy.linalg.lstsq(A, numpy.log10(preys[..., i:].T))
                 return 10.**(c[0, ...]*numpy.log10(self.bin_masses[0]) + c[1, ...]) * predbin_per_preybin
 
         # Build list of indices of state variables that must be kept constant.
@@ -255,7 +259,7 @@ class Mizer(object):
                     state[ibin0] /= prey_per_biomass.value
             if verbose:
                 print('Spinning up from %s to %s' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
-            if integration_method == 0:
+            if integration_method == EULER:
                 # Integrate with Forward Euler
                 #y_spinup = self.fabm_model.integrate(state_copy, t_spinup, dt=dt)
                 ioutput = 0
@@ -276,7 +280,7 @@ class Mizer(object):
         if verbose:
             print('Time integrating from %s to %s' % (num2date(t[0]), num2date(t[-1])))
         in_spinup = False
-        if integration_method == 0:
+        if integration_method == EULER:
             # Integrate with Forward Euler
             # First prepare all inputs on time integration grid
             ts = t[0] + numpy.arange(1 + int(round((t[-1] - t[0]) / dt))) * dt
