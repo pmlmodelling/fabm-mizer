@@ -186,7 +186,7 @@ class Mizer(object):
         self.initial_state = numpy.copy(self.fabm_model.state)
         self.recruitment_from_prey = recruitment_from_prey
 
-    def run(self, t, verbose=False, spinup=0, save_spinup=False, initial_state=None, integration_method=0):
+    def run(self, t, verbose=False, spinup=0, save_spinup=False, initial_state=None, integration_method=0, dt=1/24.):
         if initial_state is None:
             initial_state = self.initial_state
 
@@ -217,6 +217,8 @@ class Mizer(object):
         if recruitment_from_prey:
             iconstant_states.add(ibin0)
         iconstant_states = list(sorted(iconstant_states))
+        multiplier = numpy.ones((state.size,))*86400*dt
+        multiplier[iconstant_states] = 0
 
         def dy(y, current_time):
             state[:] = y
@@ -241,8 +243,7 @@ class Mizer(object):
         # Spin up with time-averaged prey abundances
         t_spinup, y_spinup = None, None
         if spinup > 0:
-            in_spinup = True
-            t_spinup = t[0] - numpy.arange(0., 365.23*spinup, 1.)[::-1]
+            t_spinup = numpy.linspace(t[0]-365.23*spinup, t[0], 1 + spinup*12)
             state[prey_indices] = prey.getMean()
             if temperature_provider is not None:
                 temperature.value = temperature_provider.mean()
@@ -254,8 +255,22 @@ class Mizer(object):
                     state[ibin0] /= prey_per_biomass.value
             if verbose:
                 print('Spinning up from %s to %s' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
-            y_spinup = scipy.integrate.odeint(dy, state, t_spinup)
-            #y_spinup = self.fabm_model.integrate(state_copy, t_spinup, dt=1./24.)
+            if integration_method == 0:
+                # Integrate with Forward Euler
+                #y_spinup = self.fabm_model.integrate(state_copy, t_spinup, dt=dt)
+                ioutput = 0
+                y_spinup = numpy.empty((t_spinup.size, state.size))
+                ts_spinup = t_spinup[0] + numpy.arange(1 + int(round((t_spinup[-1] - t_spinup[0]) / dt))) * dt
+                for current_t in ts_spinup:
+                    checkState(repair=True)
+                    if current_t >= t_spinup[ioutput]:
+                        y_spinup[ioutput, :] = state
+                        ioutput += 1
+                    state += getRates()*multiplier
+            else:
+                # Integrate with SciPy odeint
+                in_spinup = True
+                y_spinup = scipy.integrate.odeint(dy, state, t_spinup)
             state[:] = y_spinup[-1, :]
 
         if verbose:
@@ -263,15 +278,11 @@ class Mizer(object):
         in_spinup = False
         if integration_method == 0:
             # Integrate with Forward Euler
-            dt = 1./24
-
-            # Prepare all inputs on time integration grid
+            # First prepare all inputs on time integration grid
             ts = t[0] + numpy.arange(1 + int(round((t[-1] - t[0]) / dt))) * dt
             assert ts[-1] >= t[-1], 'Simulation ends at %s, which is before last desired output time %s.' % (ts[-1], t[-1])
             preys = prey.getValues(ts)
             assert (preys >= 0).all(), 'Minimum prey concentration < 0: %s' % (preys.min(),)
-            multiplier = numpy.ones((state.size,))*86400*dt
-            multiplier[iconstant_states] = 0
             if depth_provider is not None:
                 invdepths = 1./depth_provider.get(ts)
                 assert (invdepths >= 0).all(), 'Minimum 1/depth < 0: %s' % (invdepths.min(),)
