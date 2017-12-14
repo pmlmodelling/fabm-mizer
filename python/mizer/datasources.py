@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import os.path
+import datetime
 import numpy
 import netCDF4
 from matplotlib import pyplot
@@ -28,7 +29,7 @@ class Constant(ValueProvider):
         return self.value
 
 class TimeSeries(ValueProvider):
-    def __init__(self, path, variable_name, scale_factor=1.0, weights=None, plot=False, time_name='time', stop=None, minimum=None, maximum=None, **dim2index):
+    def __init__(self, path, variable_name, scale_factor=1.0, time_name='time', stop=None, minimum=None, maximum=None, **dim2index):
         ValueProvider.__init__(self)
 
         print('Reading %s from %s' % (variable_name, os.path.relpath(path)))
@@ -79,35 +80,10 @@ class TimeSeries(ValueProvider):
                 self.data = eval(variable_name, {}, NcDict(nc))*scale_factor
                 self.long_name = variable_name
                 self.units = 'unknown'
-                dimensions = ()
-                assert self.data.shape == self.times.shape, 'Unexpected shape for %s: got %s, expected %s' % (variable_name, self.data.shape, self.times.shape)
+                dimensions = (time_name,)
+            assert self.data.shape == self.times.shape, 'Unexpected shape for %s: got %s, expected %s' % (variable_name, self.data.shape, self.times.shape)
             if scale_factor != 1.0:
                 self.units = '%s*%s' % (scale_factor, self.units)
-            if weights is not None:
-                ncweights = nc.variables[weights]
-                weight_dims, weight_values = getData(ncweights)
-                self.data *= weight_values
-                self.units = '%s*%s' % (self.units, ncweights.units)
-            for idim in range(len(dimensions)-1, -1, -1):
-                dimname = dimensions[idim]
-                if self.data.shape[idim] == 1:
-                    slc = [slice(None)]*self.data.ndim
-                    slc[idim] = 0
-                    self.data = self.data[slc]
-                    if weights is not None:
-                        weight_values = weight_values[slc]
-                elif dimname in dim2index:
-                    if dim2index[dimname] == 'mean':
-                        if weights is not None:
-                            self.data = self.data.sum(axis=idim)/weight_values.sum(axis=idim)
-                        else:
-                            self.data = self.data.mean(axis=idim)
-                    elif dim2index[dimname] == 'sum':
-                        self.data = self.data.sum(axis=idim)
-                    else:
-                        assert False, 'Unknown dimension indexer %s specified for %s' % (dim2index[dimname], dimname)
-                elif dimname != time_name:
-                    assert False, 'No index (or "sum", "mean") provided for dimension %s' % dimname
         valid = numpy.isfinite(self.data)
         assert valid.all(), 'Variable %s in %s contains non-finite values (NaN?). Data: %s. First problem time: %s' % (path, variable_name, self.data, num2date(self.times[numpy.logical_not(valid)][0]))
         minval, maxval = self.data.min(), self.data.max()
@@ -115,8 +91,6 @@ class TimeSeries(ValueProvider):
         print('  Value range: %.3g - %.3g' % (minval, maxval))
         assert minimum is None or minval >= minimum, 'Minimum value %s lies below prescribed minimum of %s' % (minval, minimum)
         assert maximum is None or maxval <= maximum, 'Maximum value %s lies above prescribed maximum of %s' % (maxval, maximum)
-        if plot:
-            self.plot()
 
     def get(self, time):
         return numpy.interp(time, self.times, self.data)
@@ -128,6 +102,47 @@ class TimeSeries(ValueProvider):
         fig = pyplot.figure()
         ax = fig.gca()
         ax.plot_date(self.times, self.data, '-')
+        ax.grid()
+        ax.set_ylabel('%s (%s)' % (self.long_name, self.units))
+
+class Climatology(ValueProvider):
+    def __init__(self, timeseries):
+        assert isinstance(timeseries, TimeSeries)
+        self.times = numpy.arange(366, dtype=float)
+        self.data = numpy.zeros(self.times.shape, dtype=float)
+        count = numpy.zeros(self.data.shape, dtype=int)
+        missing_value = timeseries.data.min() - 1.
+        for iyear in xrange(num2date(timeseries.times[0]).year, num2date(timeseries.times[-1]).year+1):
+            start = date2num(datetime.datetime(iyear, 1, 1))
+            stop = date2num(datetime.datetime(iyear+1, 1, 1))
+            curtime = numpy.arange(start, start + self.times[-1] + 0.1, 1.)
+            istart = max(0, timeseries.times.searchsorted(start)-1)
+            istop = timeseries.times.searchsorted(stop)+1
+            curdata = numpy.interp(curtime, timeseries.times[istart:istop], timeseries.data[istart:istop], left=missing_value, right=missing_value)
+            curcount = curdata > missing_value
+            curdata[curcount == 0] = 0
+            self.data += curdata
+            count += curcount
+        assert (count > 0).all()
+        self.data /= count
+        self.long_name = '%s climatology' % timeseries.long_name
+        self.units = timeseries.units
+
+    def get(self, time):
+        oldshape = numpy.shape(time)
+        time = numpy.reshape(time, (-1,))
+        offsets = date2num([datetime.datetime(dt.year, 1, 1) for dt in num2date(time)])
+        iday = time - offsets
+        values = numpy.interp(iday, self.times, self.data)
+        return numpy.reshape(values, oldshape)
+
+    def mean(self):
+        return self.data.mean()
+
+    def plot(self):
+        fig = pyplot.figure()
+        ax = fig.gca()
+        ax.plot(self.times, self.data, '-')
         ax.grid()
         ax.set_ylabel('%s (%s)' % (self.long_name, self.units))
 
