@@ -216,31 +216,11 @@ class Mizer(object):
                 c, residuals, rank, s = numpy.linalg.lstsq(A, numpy.log10(preys[..., i:].T))
                 return 10.**(c[0, ...]*numpy.log10(self.bin_masses[0]) + c[1, ...]) * predbin_per_preybin
 
-        # Build list of indices of state variables that must be kept constant.
-        iconstant_states = set(prey_indices)
-        if recruitment_from_prey:
-            iconstant_states.add(ibin0)
-        iconstant_states = list(sorted(iconstant_states))
+        # Create multiplier for rate of change - zero for state variables that will be forced.
         multiplier = numpy.ones((state.size,))*86400*dt
-        multiplier[iconstant_states] = 0
-
-        def dy(y, current_time):
-            state[:] = y
-            checkState(repair=True)
-            if not in_spinup:
-                current_prey = prey.getValues(current_time)
-                state[prey_indices] = current_prey
-                if temperature_provider is not None:
-                    temperature.value = temperature_provider.get(current_time)
-                if depth_provider is not None:
-                    prey_per_biomass.value = 1./depth_provider.get(current_time)
-                if recruitment_from_prey:
-                    state[ibin0] = getEggs(current_prey)
-                    if depth_provider is not None:
-                        state[ibin0] /= prey_per_biomass.value
-            rates = getRates()*86400
-            rates[iconstant_states] = 0.
-            return rates
+        multiplier[prey_indices] = 0
+        if recruitment_from_prey:
+            multiplier[ibin0] = 0
 
         state[:] = initial_state
 
@@ -259,63 +239,55 @@ class Mizer(object):
                     state[ibin0] /= prey_per_biomass.value
             if verbose:
                 print('Spinning up from %s to %s' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
-            if integration_method == EULER:
-                # Integrate with Forward Euler
-                #y_spinup = self.fabm_model.integrate(state_copy, t_spinup, dt=dt)
-                ioutput = 0
-                y_spinup = numpy.empty((t_spinup.size, state.size))
-                ts_spinup = t_spinup[0] + numpy.arange(1 + int(round((t_spinup[-1] - t_spinup[0]) / dt))) * dt
-                for current_t in ts_spinup:
-                    checkState(repair=True)
-                    if current_t >= t_spinup[ioutput]:
-                        y_spinup[ioutput, :] = state
-                        ioutput += 1
-                    state += getRates()*multiplier
-            else:
-                # Integrate with SciPy odeint
-                in_spinup = True
-                y_spinup = scipy.integrate.odeint(dy, state, t_spinup)
+
+            # Integrate with Forward Euler
+            #y_spinup = self.fabm_model.integrate(state_copy, t_spinup, dt=dt)
+            ioutput = 0
+            y_spinup = numpy.empty((t_spinup.size, state.size))
+            ts_spinup = t_spinup[0] + numpy.arange(1 + int(round((t_spinup[-1] - t_spinup[0]) / dt))) * dt
+            for current_t in ts_spinup:
+                checkState(repair=True)
+                if current_t >= t_spinup[ioutput]:
+                    y_spinup[ioutput, :] = state
+                    ioutput += 1
+                state += getRates()*multiplier
             state[:] = y_spinup[-1, :]
 
         if verbose:
             print('Time integrating from %s to %s' % (num2date(t[0]), num2date(t[-1])))
-        in_spinup = False
-        if integration_method == EULER:
-            # Integrate with Forward Euler
-            # First prepare all inputs on time integration grid
-            ts = t[0] + numpy.arange(1 + int(round((t[-1] - t[0]) / dt))) * dt
-            assert ts[-1] >= t[-1], 'Simulation ends at %s, which is before last desired output time %s.' % (ts[-1], t[-1])
-            preys = prey.getValues(ts)
-            assert (preys >= 0).all(), 'Minimum prey concentration < 0: %s' % (preys.min(),)
-            if depth_provider is not None:
-                invdepths = 1./depth_provider.get(ts)
-                assert (invdepths >= 0).all(), 'Minimum 1/depth < 0: %s' % (invdepths.min(),)
-            if recruitment_from_prey:
-                eggs = getEggs(preys)
-                if depth_provider is not None:
-                    eggs[:] /= invdepths
-            if temperature_provider is not None:
-                temperatures = temperature_provider.get(ts)
 
-            # Time integration
-            ioutput = 0
-            y = numpy.empty((t.size, state.size))
-            for j, current_t in enumerate(ts):
-                state[prey_indices] = preys[j, :]
-                if temperature_provider is not None:
-                    temperature.value = temperatures[j]
-                if depth_provider is not None:
-                    prey_per_biomass.value = invdepths[j]
-                if recruitment_from_prey:
-                    state[ibin0] = eggs[j]
-                checkState(repair=True)
-                if current_t >= t[ioutput]:
-                    y[ioutput, :] = state
-                    ioutput += 1
-                state += getRates()*multiplier
-        else:
-            # Integrate with SciPy odeint
-            y = scipy.integrate.odeint(dy, state, t)
+        # Integrate with Forward Euler
+        # First prepare all inputs on time integration grid
+        ts = t[0] + numpy.arange(1 + int(round((t[-1] - t[0]) / dt))) * dt
+        assert ts[-1] >= t[-1], 'Simulation ends at %s, which is before last desired output time %s.' % (ts[-1], t[-1])
+        preys = prey.getValues(ts)
+        assert (preys >= 0).all(), 'Minimum prey concentration < 0: %s' % (preys.min(),)
+        if depth_provider is not None:
+            invdepths = 1./depth_provider.get(ts)
+            assert (invdepths >= 0).all(), 'Minimum 1/depth < 0: %s' % (invdepths.min(),)
+        if recruitment_from_prey:
+            eggs = getEggs(preys)
+            if depth_provider is not None:
+                eggs[:] /= invdepths
+        if temperature_provider is not None:
+            temperatures = temperature_provider.get(ts)
+
+        # Time integration
+        ioutput = 0
+        y = numpy.empty((t.size, state.size))
+        for itime, current_t in enumerate(ts):
+            state[prey_indices] = preys[itime, :]
+            if temperature_provider is not None:
+                temperature.value = temperatures[itime]
+            if depth_provider is not None:
+                prey_per_biomass.value = invdepths[itime]
+            if recruitment_from_prey:
+                state[ibin0] = eggs[itime]
+            checkState(repair=True)
+            if current_t >= t[ioutput]:
+                y[ioutput, :] = state
+                ioutput += 1
+            state += getRates()*multiplier
         if pyfabm.hasError():
             return
 
@@ -325,7 +297,7 @@ class Mizer(object):
         temperature = None if temperature_provider is None else temperature_provider.get(t)
         if recruitment_from_prey:
             y[:, ibin0] = getEggs(y[:, prey_indices])
-            if depth_provider is not None:
+            if depth is not None:
                 y[:, ibin0] *= depth
 
         if spinup > 0 and save_spinup:
