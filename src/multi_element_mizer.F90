@@ -26,11 +26,53 @@ module mizer_multi_element_population
 ! !USES:
    use fabm_types
    use fabm_particle
+   use fabm_builtin_models
 
    implicit none
 
 !  default: all is private.
    private
+
+   type,extends(type_particle_model),public :: type_depth_averaged_prey
+      type (type_model_id)      :: id_source
+      type (type_dependency_id) :: id_w
+      type (type_horizontal_dependency_id) :: id_int_w
+      type (type_horizontal_dependency_id) :: id_int_c_w
+      type (type_horizontal_dependency_id) :: id_int_n_w
+      type (type_horizontal_dependency_id) :: id_int_p_w
+      type (type_horizontal_dependency_id) :: id_int_s_w
+      type (type_horizontal_diagnostic_variable_id) :: id_c
+      type (type_horizontal_diagnostic_variable_id) :: id_n
+      type (type_horizontal_diagnostic_variable_id) :: id_p
+      type (type_horizontal_diagnostic_variable_id) :: id_s
+   contains
+      procedure :: initialize => depth_averaged_prey_initialize
+      procedure :: do => depth_averaged_prey_do_bottom
+   end type
+   
+   type,extends(type_particle_model),public :: type_product
+      type (type_model_id)      :: id_source
+      type (type_dependency_id) :: id_c
+      type (type_dependency_id) :: id_n
+      type (type_dependency_id) :: id_p
+      type (type_dependency_id) :: id_s
+      type (type_dependency_id) :: id_w
+      type (type_diagnostic_variable_id) :: id_c_w
+      type (type_diagnostic_variable_id) :: id_n_w
+      type (type_diagnostic_variable_id) :: id_p_w
+      type (type_diagnostic_variable_id) :: id_s_w
+   contains
+      procedure :: initialize => product_initialize
+      procedure :: do => product_do
+   end type type_product
+
+   type,extends(type_particle_model),public :: type_square
+      type (type_dependency_id) :: id_source
+      type (type_diagnostic_variable_id) :: id_result
+   contains
+      procedure :: initialize => square_initialize
+      procedure :: do => square_do
+   end type
 !
 ! !PUBLIC DERIVED TYPES:
    type,extends(type_particle_model),public :: type_multi_element_population
@@ -52,6 +94,7 @@ module mizer_multi_element_population
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_f(:)               ! Functional response per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_g(:)               ! Specific growth rate per size class
       type (type_dependency_id)                                 :: id_T                  ! Temperature
+      type (type_state_variable_id),                allocatable :: id_pelprey_c(:)
 
       ! Number of size classes and prey
       integer :: nclass
@@ -105,6 +148,144 @@ module mizer_multi_element_population
 
 contains
 
+   subroutine depth_averaged_prey_initialize(self, configunit)
+!
+! !INPUT PARAMETERS:
+   class (type_depth_averaged_prey), intent(inout), target :: self
+   integer,                          intent(in)            :: configunit
+
+   class (type_product),        pointer :: product
+   class (type_depth_integral), pointer :: depth_integral
+
+   call self%register_model_dependency(self%id_source, 'source')
+   call self%register_dependency(self%id_w, 'w', '', 'weight')
+
+   call self%register_dependency(self%id_int_c_w, 'int_c_w', '', 'depth-integral of carbon * weight')
+   call self%register_dependency(self%id_int_n_w, 'int_n_w', '', 'depth-integral of nitrogen * weight')
+   call self%register_dependency(self%id_int_p_w, 'int_p_w', '', 'depth-integral of phosphorus * weight')
+   call self%register_dependency(self%id_int_s_w, 'int_s_w', '', 'depth-integral of silicate * weight')
+   call self%register_dependency(self%id_int_w, 'int_w', '', 'depth-integral of weight')
+   call self%register_diagnostic_variable(self%id_c, 'c', 'mmol C/m^3', 'depth-averaged carbon', act_as_state_variable=.true., domain=domain_bottom, source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_n, 'n', 'mmol N/m^3', 'depth-averaged nitrogen', act_as_state_variable=.true., domain=domain_bottom, source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_p, 'p', 'mmol P/m^3', 'depth-averaged phosphorus', act_as_state_variable=.true., domain=domain_bottom, source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_s, 's', 'mmol Si/m^3', 'depth-averaged silicate', act_as_state_variable=.true., domain=domain_bottom, source=source_do_bottom)
+   call self%add_to_aggregate_variable(standard_variables%total_carbon,     self%id_c)
+   call self%add_to_aggregate_variable(standard_variables%total_nitrogen,   self%id_n)
+   call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_p)
+   call self%add_to_aggregate_variable(standard_variables%total_silicate,   self%id_s)
+
+   allocate(product)
+   call self%add_child(product, 'product', configunit=-1)
+   call product%request_coupling('source', '../source')
+   call product%request_coupling('w', '../weight')
+
+   allocate(depth_integral)
+   call self%add_child(depth_integral, 'c_w_integrator', configunit=-1)
+   call depth_integral%request_coupling('source', 'product/c_w')
+   call self%request_coupling(self%id_int_c_w, 'c_w_integrator/result')
+
+   allocate(depth_integral)
+   call self%add_child(depth_integral, 'n_w_integrator', configunit=-1)
+   call depth_integral%request_coupling('source', 'product/n_w')
+   call self%request_coupling(self%id_int_n_w, 'n_w_integrator/result')
+
+   allocate(depth_integral)
+   call self%add_child(depth_integral, 'p_w_integrator', configunit=-1)
+   call depth_integral%request_coupling('source', 'product/p_w')
+   call self%request_coupling(self%id_int_p_w, 'p_w_integrator/result')
+
+   allocate(depth_integral)
+   call self%add_child(depth_integral, 's_w_integrator', configunit=-1)
+   call depth_integral%request_coupling('source', 'product/s_w')
+   call self%request_coupling(self%id_int_s_w, 's_w_integrator/result')
+
+   call self%request_coupling(self%id_int_w, 'w_integrator/result')
+
+   end subroutine depth_averaged_prey_initialize
+
+   subroutine depth_averaged_prey_do_bottom(self, _ARGUMENTS_DO_BOTTOM_)
+    class (type_depth_averaged_prey), intent(in) :: self
+    _DECLARE_ARGUMENTS_DO_BOTTOM_
+
+    real(rk) :: c_w_int, n_w_int, p_w_int, s_w_int, w_int
+
+    _HORIZONTAL_LOOP_BEGIN_
+        _GET_HORIZONTAL_(self%id_int_w, w_int)
+        _GET_HORIZONTAL_(self%id_int_c_w, c_w_int)
+        _GET_HORIZONTAL_(self%id_int_n_w, n_w_int)
+        _GET_HORIZONTAL_(self%id_int_p_w, p_w_int)
+        _GET_HORIZONTAL_(self%id_int_s_w, s_w_int)
+        _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c, c_w_int/w_int)
+        _SET_HORIZONTAL_DIAGNOSTIC_(self%id_n, n_w_int/w_int)
+        _SET_HORIZONTAL_DIAGNOSTIC_(self%id_p, p_w_int/w_int)
+        _SET_HORIZONTAL_DIAGNOSTIC_(self%id_s, s_w_int/w_int)
+    _HORIZONTAL_LOOP_END_
+   end subroutine depth_averaged_prey_do_bottom
+
+   subroutine square_initialize(self, configunit)
+!
+! !INPUT PARAMETERS:
+   class (type_square), intent(inout), target :: self
+   integer,             intent(in)            :: configunit
+
+   call self%register_dependency(self%id_source, 'source', '', 'source')
+   call self%register_diagnostic_variable(self%id_result, 'result', '', 'result')
+
+   end subroutine square_initialize
+
+   subroutine square_do(self, _ARGUMENTS_DO_)
+    class (type_square), intent(in) :: self
+    _DECLARE_ARGUMENTS_DO_
+
+    real(rk) :: value
+
+    _LOOP_BEGIN_
+        _GET_(self%id_source, value)
+        _SET_DIAGNOSTIC_(self%id_result, value*value)
+    _LOOP_END_
+   end subroutine square_do
+
+   subroutine product_initialize(self, configunit)
+!
+! !INPUT PARAMETERS:
+   class (type_product), intent(inout), target :: self
+   integer,              intent(in)            :: configunit
+
+   call self%register_model_dependency(self%id_source, 'source')
+   call self%register_dependency(self%id_w, 'w', '', 'weight')
+   call self%register_dependency(self%id_c, 'c', 'mmol C/m^3', 'carbon')
+   call self%register_dependency(self%id_n, 'n', 'mmol N/m^3', 'nitrogen')
+   call self%register_dependency(self%id_p, 'p', 'mmol P/m^3', 'phosphorus')
+   call self%register_dependency(self%id_s, 's', 'mmol Si/m^3', 'silicate')
+   call self%request_coupling_to_model(self%id_c, self%id_source, standard_variables%total_carbon)
+   call self%request_coupling_to_model(self%id_n, self%id_source, standard_variables%total_nitrogen)
+   call self%request_coupling_to_model(self%id_p, self%id_source, standard_variables%total_phosphorus)
+   call self%request_coupling_to_model(self%id_s, self%id_source, standard_variables%total_silicate)
+   call self%register_diagnostic_variable(self%id_c_w, 'c_w', '', 'carbon * weight')
+   call self%register_diagnostic_variable(self%id_n_w, 'n_w', '', 'nitrogen * weight')
+   call self%register_diagnostic_variable(self%id_p_w, 'p_w', '', 'phosphorus * weight')
+   call self%register_diagnostic_variable(self%id_s_w, 's_w', '', 'silicate * weight')
+
+   end subroutine product_initialize
+
+   subroutine product_do(self, _ARGUMENTS_DO_)
+    class (type_product), intent(in) :: self
+    _DECLARE_ARGUMENTS_DO_
+
+    real(rk) :: w, c, n, p, s
+
+    _LOOP_BEGIN_
+        _GET_(self%id_w, w)
+        _GET_(self%id_c, c)
+        _GET_(self%id_n, n)
+        _GET_(self%id_p, p)
+        _GET_(self%id_s, s)
+        _SET_DIAGNOSTIC_(self%id_c_w, c*w)
+        _SET_DIAGNOSTIC_(self%id_n_w, n*w)
+        _SET_DIAGNOSTIC_(self%id_p_w, p*w)
+        _SET_DIAGNOSTIC_(self%id_s_w, s*w)
+    _LOOP_END_
+   end subroutine product_do
 !-----------------------------------------------------------------------
 !BOP
 !
@@ -115,11 +296,11 @@ contains
 !
 ! !INPUT PARAMETERS:
    class (type_multi_element_population), intent(inout),target :: self
-   integer,                          intent(in )          :: configunit
+   integer,                               intent(in )          :: configunit
 !
 ! !LOCAL VARIABLES:
    integer            :: iclass, iprey
-   logical            :: cannibalism
+   logical            :: cannibalism, biomass_has_prey_unit
    real(rk)           :: delta_logw
    real(rk)           :: k_vb,n,q,p,w_mat,w_inf,gamma,h,ks,f0,z0
    real(rk)           :: z0pre,z0exp,w_s,z_s
@@ -127,9 +308,14 @@ contains
    real(rk)           :: T_ref
    real(rk)           :: S1,S2,F,w_minF
    integer            :: z0_type
+   integer            :: fishing_type
    character(len=10)  :: strindex
    real(rk),parameter :: pi = 4*atan(1.0_rk)
    real(rk),parameter :: sec_per_year = 86400*365.2425_rk
+   class (type_weighted_sum), pointer :: total_pelprey_calculator
+   class (type_depth_averaged_prey), pointer :: depth_averaged_prey
+   class (type_square), pointer :: square
+   class (type_depth_integral), pointer :: depth_integral
 !EOP
 !-----------------------------------------------------------------------
 !BOC
@@ -166,11 +352,17 @@ contains
       call self%get_parameter(self%R_max, 'R_max','# yr-1','maximum recruitment flux', minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    end select
 
-   call self%get_parameter(w_minF,     'w_minF',     'g',        'minimum weight for fishing selectivity',        default=0.0_rk, minimum=0.0_rk)
-   call self%get_parameter(S1,         'S1',         '-',        'offset for fishing selectivity exponent',       default=0.0_rk, minimum=0.0_rk)
-   call self%get_parameter(S2,         'S2',         'g-1',      'scale factor for fishing selectivity exponent', default=0.0_rk, minimum=0.0_rk)
-   call self%get_parameter(F,          'F',          'yr-1',     'fishing effort',                                default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+   call self%get_parameter(fishing_type,'fishing_type','',       'fishing regime (0: none, 1: constant/knife-edge, 2: logistic)',default=0,      minimum=0, maximum=2)
+   if (fishing_type > 0) then
+      call self%get_parameter(w_minF,     'w_minF',     'g',        'minimum weight for fishing selectivity',        default=0.0_rk, minimum=0.0_rk)
+      call self%get_parameter(F,          'F',          'yr-1',     'fishing effort',                                default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+   end if
+   if (fishing_type == 2) then
+      call self%get_parameter(S1,         'S1',         '-',        'offset for fishing selectivity exponent',       default=0.0_rk, minimum=0.0_rk)
+      call self%get_parameter(S2,         'S2',         'g-1',      'scale factor for fishing selectivity exponent', default=0.0_rk, minimum=0.0_rk)
+   end if
    call self%get_parameter(cannibalism,'cannibalism','',         'whether to enable intraspecific predation', default=.true.)
+   if (cannibalism) call self%get_parameter(biomass_has_prey_unit, 'biomass_has_prey_unit', '', 'biomass has the same unit as prey', default=.true.)
    call self%get_parameter(self%qnc,   'qnc',        'mol mol-1','nitrogen to carbon ratio', default=16.0_rk/106.0_rk)
    call self%get_parameter(self%qpc,   'qpc',        'mol mol-1','phosphorus to carbon ratio', default=1.0_rk/106.0_rk)
 
@@ -190,7 +382,7 @@ contains
    ! Pre-factor for volumetric search rate (Eq M2)
    gamma = f0*h*self%beta**(2-lambda)/((1-f0)*sqrt(2*pi)*kappa*self%sigma)
    !gamma = f0*h*self%beta**(2-lambda)/((1-f0)*sqrt(2*pi)*kappa*self%sigma*exp((lambda-2)**2 * self%sigma**2 / 2)) ! add exp term taken from actual R code
-   call self%get_parameter(gamma, 'gamma', 'yr-1 g^(-q)', 'pre-factor for volumetric search rate', minimum=0.0_rk, default=gamma*sec_per_year, scale_factor=1._rk/sec_per_year)
+   call self%get_parameter(gamma, 'gamma', 'PV yr-1 g^(-q)', 'pre-factor for volumetric search rate', minimum=0.0_rk, default=gamma*sec_per_year, scale_factor=1._rk/sec_per_year)
 
    ! Allow user override of standard metabolism pre-factor (e.g., Blanchard community size spectrum model has ks=0)
    call self%get_parameter(ks, 'ks', 'yr-1 g^(-p)', 'pre-factor for standard metabolism', minimum=0.0_rk, default=0.2_rk*h*sec_per_year, scale_factor=1._rk/sec_per_year)
@@ -216,7 +408,7 @@ contains
    allocate(self%F(self%nclass))
    allocate(self%psi(self%nclass))
    allocate(self%V(self%nclass))
-   self%V(:) = gamma*self%w**(q-1)      ! specific volumetric search rate (specific, hence the -1!)
+   self%V(:) = gamma*self%w**(q-1)      ! specific volumetric search rate [m3 s-1 g-1] (mass-specific, hence the -1!)
    self%I_max(:) = h*self%w**(n-1)      ! specific maximum ingestion rate [s-1]; Eq M4, but specific, hence the -1!
    self%std_metab(:) = ks*self%w**(p-1) ! specific metabolism [s-1]; second term in Eq M7, but specific, hence the -1!
    select case (z0_type)
@@ -230,16 +422,29 @@ contains
    else
       self%mu_s = 0
    end if
+
+   ! Fishing mortality
    self%F = 0.0_rk
-   do iclass=1,self%nclass
-      if (self%w(iclass)>w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))  ! fishing mortality [s-1]; Eqs M13 and M14 combined
-   end do
+   select case (fishing_type)
+   case (1)
+      ! constant
+      do iclass=1,self%nclass
+         if (self%w(iclass)>w_minF) self%F(iclass) = F
+      end do
+   case (2)
+      ! mizer fishing mortality [s-1]; Eqs M13 and M14 combined
+      do iclass=1,self%nclass
+         if (self%w(iclass)>w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))
+      end do
+   end select
+
    if (w_mat==0.0_rk) then
       ! No explicit reproduction as in original Blanchard community size spectrum model. Recruitment will be constant.
       self%psi(:) = 0
    else
       self%psi(:) = (self%w/w_inf)**(1-n) / (1+(self%w/w_mat)**(-10)) ! allocation to reproduction [-]; Eqs M13 and M14 combined
    end if
+   if (.false.) then
    write (*,*) 'Specific search volume (yr-1):'
    write (*,*) '  @ weight = 1:',gamma*sec_per_year,'(gamma)'
    write (*,*) '  @ minimum weight:',self%V(1)*sec_per_year
@@ -266,6 +471,7 @@ contains
    write (*,*) '  @ maximum weight:',self%mu_s(self%nclass)*sec_per_year
    write (*,*) 'Fishing mortality at minimum size:',self%F(1)*sec_per_year,'yr-1'
    write (*,*) 'Fishing mortality at maximum size:',self%F(self%nclass)*sec_per_year,'yr-1'
+   end if
 
    ! Register dependencies for all prey.
    ! If the population is cannibalistic, autoamtically add all our size classes to the set of prey types.
@@ -275,19 +481,52 @@ contains
    allocate(self%id_prey_n(self%nprey))
    allocate(self%id_prey_p(self%nprey))
    allocate(self%id_prey_s(self%nprey))
+   allocate(self%id_pelprey_c(self%nprey))
+   allocate(total_pelprey_calculator)
    do iprey=1,self%nprey
       write (strindex,'(i0)') iprey
-      call self%register_bottom_state_dependency(self%id_prey_c(iprey),'prey_c'//trim(strindex),'mmol C m-2', 'carbon in prey '//trim(strindex))
-      call self%register_bottom_state_dependency(self%id_prey_n(iprey),'prey_n'//trim(strindex),'mmol N m-2', 'nitrogen in prey '//trim(strindex))
-      call self%register_bottom_state_dependency(self%id_prey_p(iprey),'prey_p'//trim(strindex),'mmol P m-2', 'phosphorus in prey '//trim(strindex))
-      call self%register_bottom_state_dependency(self%id_prey_s(iprey),'prey_s'//trim(strindex),'mmol Si m-2','silicate in prey '//trim(strindex))
-
       call self%register_model_dependency(self%id_prey(iprey),'prey'//trim(strindex))
-      call self%request_coupling_to_model(self%id_prey_c(iprey),self%id_prey(iprey),standard_variables%total_carbon)
-      call self%request_coupling_to_model(self%id_prey_n(iprey),self%id_prey(iprey),standard_variables%total_nitrogen)
-      call self%request_coupling_to_model(self%id_prey_p(iprey),self%id_prey(iprey),standard_variables%total_phosphorus)
-      call self%request_coupling_to_model(self%id_prey_s(iprey),self%id_prey(iprey),standard_variables%total_silicate)
+
+      call self%register_bottom_state_dependency(self%id_prey_c(iprey), 'prey_c'//trim(strindex), 'mmol C m-3', 'average encountered concentration of carbon in prey '//trim(strindex))
+      call self%register_bottom_state_dependency(self%id_prey_n(iprey), 'prey_n'//trim(strindex), 'mmol N m-3', 'average encountered concentration of nitrogen in prey '//trim(strindex))
+      call self%register_bottom_state_dependency(self%id_prey_p(iprey), 'prey_p'//trim(strindex), 'mmol P m-3', 'average encountered concentration of phosphorus in prey '//trim(strindex))
+      call self%register_bottom_state_dependency(self%id_prey_s(iprey), 'prey_s'//trim(strindex), 'mmol Si m-3', 'average encountered concentration of silicate in prey '//trim(strindex))
+      
+      if (cannibalism .and. iprey > self%nprey - self%nclass) then
+        ! Prey is part of our own population; in that case both prey and predator are proportional to the same 3D field
+        ! which increases their encounter probability (typically plankton carbon)
+        call self%request_coupling_to_model(self%id_prey_c(iprey), self%id_prey(iprey), standard_variables%total_carbon)
+        call self%request_coupling_to_model(self%id_prey_n(iprey), self%id_prey(iprey), standard_variables%total_nitrogen)
+        call self%request_coupling_to_model(self%id_prey_p(iprey), self%id_prey(iprey), standard_variables%total_phosphorus)
+        call self%request_coupling_to_model(self%id_prey_s(iprey), self%id_prey(iprey), standard_variables%total_silicate)
+      else
+        ! Prey is pelagic
+        call self%register_interior_state_dependency(self%id_pelprey_c(iprey), 'pelprey_c'//trim(strindex), 'mmol C m-3', 'carbon in pelagic prey '//trim(strindex))
+        call self%request_coupling_to_model(self%id_pelprey_c(iprey), self%id_prey(iprey), standard_variables%total_carbon)
+        call total_pelprey_calculator%add_component('pelprey_c'//trim(strindex))
+        allocate(depth_averaged_prey)
+        call self%add_child(depth_averaged_prey, 'pelprey'//trim(strindex)//'_depth_average', configunit=-1)
+        call depth_averaged_prey%request_coupling('source', 'prey'//trim(strindex))
+        call depth_averaged_prey%request_coupling('weight', 'total_pelprey_calculator/result')
+        call self%request_coupling(self%id_prey_c(iprey), 'pelprey'//trim(strindex)//'_depth_average/c')
+        call self%request_coupling(self%id_prey_n(iprey), 'pelprey'//trim(strindex)//'_depth_average/n')
+        call self%request_coupling(self%id_prey_p(iprey), 'pelprey'//trim(strindex)//'_depth_average/p')
+        call self%request_coupling(self%id_prey_s(iprey), 'pelprey'//trim(strindex)//'_depth_average/s')
+      end if
    end do
+   call self%add_child(total_pelprey_calculator,'total_pelprey_calculator',configunit=-1)
+
+   allocate(depth_integral)
+   call self%add_child(depth_integral, 'w_integrator', configunit=-1)
+   call depth_integral%request_coupling('source', '../total_pelprey_calculator/result')
+
+   allocate(square)
+   call self%add_child(square, 'w_squarer', configunit=-1)
+   call square%request_coupling('source', '../total_pelprey_calculator/result')
+
+   allocate(depth_integral)
+   call self%add_child(depth_integral, 'w2_integrator', configunit=-1)
+   call depth_integral%request_coupling('source', '../w_squarer/result')
 
    ! Allocate size-class-specific identifiers for abundance state variable and diagnostics.
    allocate(self%id_c(self%nclass))
@@ -405,7 +644,7 @@ contains
             E_a_s = sum(self%phi(:,iclass)*prey_s)
 #ifndef NDEBUG
             if (isnan(E_a_c)) &
-               call self%fatal_error('do_bottom','E_a is nan')
+               call self%fatal_error('do_bottom','E_a_c is nan')
 #endif
 
             ! Compute actual encounter (availability per volume times volumetric search rate)
