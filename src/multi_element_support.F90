@@ -269,13 +269,13 @@ contains
          class (type_depth_integral), pointer :: depth_integral
 
          call self%register_dependency(id_pel, name//'_pel', units//'/m^3', long_name)
-         call self%request_coupling_to_model(id_pel, 'source', standard_variables%total_carbon)
-         
+         call self%request_coupling_to_model(id_pel, 'source', standard_variable)
+
          allocate(product)
          call self%add_child(product, name//'_w_calculator', configunit=-1)
          call product%request_coupling('term1', '../w')
          call product%request_coupling('term2', '../'//name//'_pel')
-         
+
          allocate(depth_integral)
          call self%add_child(depth_integral, name//'_w_integrator', configunit=-1)
          call depth_integral%request_coupling('source', '../'//name//'_w_calculator/result')
