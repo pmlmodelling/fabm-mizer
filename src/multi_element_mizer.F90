@@ -52,7 +52,6 @@ module mizer_multi_element_population
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_reproduction(:)    ! Reproduction per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_f(:)               ! Functional response per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_g(:)               ! Specific growth rate per size class
-      type (type_dependency_id)                                 :: id_T                  ! Temperature
       type (type_dependency_id),                    allocatable :: id_pelprey_c(:)
 
       type (type_dependency_id)                                 :: id_c0_proxy
@@ -150,6 +149,7 @@ contains
    class (type_square),               pointer :: square
    class (type_depth_integral),       pointer :: depth_integral
    class (type_waste),                pointer :: waste
+   class (type_product),              pointer :: product
 !EOP
 !-----------------------------------------------------------------------
 !BOC
@@ -206,10 +206,20 @@ contains
       call self%get_parameter(self%E_a, 'E_a',   'eV',              'activation energy',     default=0.63_rk)
       call self%get_parameter(T_ref,    'T_ref', 'degrees_Celsius', 'reference temperature', default=13._rk)
       self%c1 = self%E_a/Boltzmann/(T_ref+Kelvin)
-      call self%register_dependency(self%id_T, standard_variables%temperature)
-      !call self%register_dependency(self%id_T_w_int, 'T_w_int', 'degrees_Celsius', 'average experienced temperature)
-      !call self%request_coupling(self%id_T_int, )
-      !call self%register_dependency(self%id_w_int, 'w_int', 'degrees_Celsius', 'average experienced temperature)
+      call self%register_dependency(self%id_T_w_int, 'T_w_int', 'degrees_Celsius', 'average experienced temperature')
+      call self%register_dependency(self%id_w_int, 'w_int', '', 'depth-integrated weight')
+
+      allocate(product)
+      call self%add_child(product, 'T_w_calculator', configunit=-1)
+      call product%request_coupling(product%id_term1, standard_variables%temperature)
+      call product%request_coupling(product%id_term2, '../total_pelprey_calculator/result')
+
+      allocate(depth_integral)
+      call self%add_child(depth_integral, 'T_w_integrator', configunit=-1)
+      call depth_integral%request_coupling('source', '../T_w_calculator/result')
+
+      call self%request_coupling(self%id_w_int, './w_integrator/result')
+      call self%request_coupling(self%id_T_w_int, './T_w_integrator/result')
    end select
 
    ! Pre-factor for maximum ingestion rate derived from von Bertalanffy growth rate and background feeding level as described in appendix B
@@ -473,7 +483,7 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey,istate
-      real(rk) :: E_e,E_a_c,E_a_n,E_a_p,E_a_s,f,total_reproduction,T_lim,temp,g_tot,R,R_p,nflux(0:self%nclass),prey_state,g_tot_c,g_tot_n,g_tot_p
+      real(rk) :: E_e,E_a_c,E_a_n,E_a_p,E_a_s,f,total_reproduction,T_lim,temp,T_w_int,w_int,g_tot,R,R_p,nflux(0:self%nclass),prey_state,g_tot_c,g_tot_n,g_tot_p
       real(rk),dimension(self%nprey)  :: prey_c,prey_n,prey_p,prey_s,prey_loss
       real(rk),dimension(self%nclass) :: Nw,I_c,I_n,I_p,I_s,maintenance,g,mu,reproduction
       real(rk), parameter :: delta_t = 900
@@ -495,7 +505,9 @@ contains
 
          ! Temperature limitation factor affecting all rates (not in Blanchard et al.)
          if (self%T_dependence==1) then
-            _GET_(self%id_T, temp)
+            _GET_HORIZONTAL_(self%id_T_w_int, T_w_int)
+            _GET_HORIZONTAL_(self%id_w_int, w_int)
+            temp = T_w_int/w_int
             T_lim = exp(self%c1-self%E_A/Boltzmann/(temp+Kelvin))
          else
             T_lim = 1
@@ -637,7 +649,7 @@ contains
 
       _HORIZONTAL_LOOP_BEGIN_
          _GET_HORIZONTAL_(self%id_c0_proxy_int, c0_proxy)
-         !_SET_HORIZONTAL_(self%id_c(1), c0_proxy/self%c0_proxy_width*(self%logw(2)-self%logw(1)))
+         _SET_HORIZONTAL_(self%id_c(1), c0_proxy/self%c0_proxy_width*(self%logw(2)-self%logw(1)))
       _HORIZONTAL_LOOP_END_
 
    end subroutine check_bottom_state
