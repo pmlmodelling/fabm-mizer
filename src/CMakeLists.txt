@@ -4,6 +4,7 @@ add_library(fabm_models_mizer OBJECT
             resource_spectrum.F90
             prey.F90
             multi_element_mizer.F90
+            multi_element_support.F90
            )
 
 add_dependencies(fabm_models_mizer fabm_base)
