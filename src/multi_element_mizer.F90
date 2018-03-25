@@ -59,6 +59,10 @@ module mizer_multi_element_population
 
       type (type_horizontal_dependency_id)                      :: id_T_w_int
       type (type_horizontal_dependency_id)                      :: id_w_int
+      type (type_horizontal_diagnostic_variable_id)             :: id_T_ave
+      type (type_horizontal_diagnostic_variable_id)             :: id_c_tot
+      type (type_horizontal_diagnostic_variable_id)             :: id_c_small
+      real(rk)                                                  :: w_threshold = 10
 
       ! Number of size classes and prey
       integer :: nclass
@@ -220,6 +224,7 @@ contains
 
       call self%request_coupling(self%id_w_int, './w_integrator/result')
       call self%request_coupling(self%id_T_w_int, './T_w_integrator/result')
+      call self%register_diagnostic_variable(self%id_T_ave, 'T_ave' ,'degrees_Celsius', 'average experienced temperature', source=source_do_bottom)
    end select
 
    ! Pre-factor for maximum ingestion rate derived from von Bertalanffy growth rate and background feeding level as described in appendix B
@@ -445,6 +450,8 @@ contains
    call self%register_diagnostic_variable(self%id_total_reproduction,'total_reproduction','g m-2 d-1','total reproduction',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_R_p,'R_p','# d-1','density-independent recruitment',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_R,'R','# d-1','recruitment',source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_c_tot, 'c_tot', 'g m-2', 'total biomass', source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_c_small, 'c_small', 'g m-2', 'small fish', source=source_do_bottom)
 
    end subroutine initialize
 !EOC
@@ -483,6 +490,7 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey,istate
+      real(rk) :: c_small
       real(rk) :: E_e,E_a_c,E_a_n,E_a_p,E_a_s,f,total_reproduction,T_lim,temp,T_w_int,w_int,g_tot,R,R_p,nflux(0:self%nclass),prey_state,g_tot_c,g_tot_n,g_tot_p
       real(rk),dimension(self%nprey)  :: prey_c,prey_n,prey_p,prey_s,prey_loss
       real(rk),dimension(self%nclass) :: Nw,I_c,I_n,I_p,I_s,maintenance,g,mu,reproduction
@@ -491,9 +499,13 @@ contains
       _HORIZONTAL_LOOP_BEGIN_
 
          ! Retrieve size-class-specific abundances
+         c_small = 0
          do iclass=1,self%nclass
             _GET_HORIZONTAL_(self%id_c(iclass), Nw(iclass))
+            if (self%w(iclass) < self%w_threshold) c_small = c_small + Nw(iclass)
          end do
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_tot, sum(Nw)*g_per_mmol_carbon)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_small, c_small*g_per_mmol_carbon)
 
          ! Retrieve prey abundances
          do iprey=1,self%nprey
@@ -508,6 +520,7 @@ contains
             _GET_HORIZONTAL_(self%id_T_w_int, T_w_int)
             _GET_HORIZONTAL_(self%id_w_int, w_int)
             temp = T_w_int/w_int
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_T_ave, temp)
             T_lim = exp(self%c1-self%E_A/Boltzmann/(temp+Kelvin))
          else
             T_lim = 1

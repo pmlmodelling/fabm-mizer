@@ -107,7 +107,7 @@ contains
    call self%register_dependency(self%id_int_w, 'int_w', '', 'depth-integral of weight')
    call self%register_dependency(self%id_int_w2, 'int_w2', '', 'depth-integral of squared weight')
    call self%register_dependency(self%id_int_c, 'int_c', '', 'depth-integral of carbon')
-   call self%register_diagnostic_variable(self%id_c, 'c', 'mmol C/m^3', 'depth-averaged carbon', act_as_state_variable=.true., domain=domain_bottom, source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_c, 'c', 'mmol C/m^3', 'depth-averaged carbon', act_as_state_variable=.true., domain=domain_bottom, source=source_do_bottom, output=output_none)
    call self%add_to_aggregate_variable(standard_variables%total_carbon,     self%id_c)
    call self%add_to_aggregate_variable(standard_variables%total_nitrogen,   self%id_c, scale_factor=self%qnc)
    call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_c, scale_factor=self%qpc)
@@ -153,7 +153,7 @@ contains
 
          class (type_absolute_rate_distributor), pointer :: rate_distributor
 
-         call self%register_diagnostic_variable(id_int, name//'_int', units//'/m^2', 'depth-integrated '//long_name, act_as_state_variable=.true., domain=domain_bottom, source=source_none)
+         call self%register_diagnostic_variable(id_int, name//'_int', units//'/m^2', 'depth-integrated '//long_name, act_as_state_variable=.true., domain=domain_bottom, source=source_none, output=output_none)
          call self%add_to_aggregate_variable(standard_variable, id_int)
          call self%register_state_dependency(id_pelstate, name, units//'/m^3', long_name)
          call self%request_coupling_to_model(id_pelstate, self%id_target, standard_variable)
