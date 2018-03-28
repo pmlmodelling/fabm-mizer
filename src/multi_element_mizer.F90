@@ -46,6 +46,10 @@ module mizer_multi_element_population
       type (type_bottom_state_variable_id)                      :: id_waste_n
       type (type_bottom_state_variable_id)                      :: id_waste_p
       type (type_bottom_state_variable_id)                      :: id_waste_s
+      type (type_bottom_state_variable_id)                      :: id_discard_c
+      type (type_bottom_state_variable_id)                      :: id_discard_n
+      type (type_bottom_state_variable_id)                      :: id_discard_p
+      type (type_bottom_state_variable_id)                      :: id_landings           ! State variable that will serve as sink for all landed biomass
       type (type_horizontal_diagnostic_variable_id)             :: id_total_reproduction ! Total reproduction
       type (type_horizontal_diagnostic_variable_id)             :: id_R_p                ! Density-independent recruitment
       type (type_horizontal_diagnostic_variable_id)             :: id_R                  ! Density-dependent recruitment
@@ -143,7 +147,7 @@ contains
    real(rk)           :: S1,S2,F,w_minF
    integer            :: z0_type
    integer            :: fishing_type
-   real(rk)           :: w_prey
+   real(rk)           :: w_prey_min, w_prey_max
    character(len=10)  :: strindex, strindex2
    real(rk),parameter :: pi = 4*atan(1.0_rk)
    real(rk),parameter :: sec_per_year = 86400*365.2425_rk
@@ -221,6 +225,7 @@ contains
       allocate(depth_integral)
       call self%add_child(depth_integral, 'T_w_integrator', configunit=-1)
       call depth_integral%request_coupling('source', '../T_w_calculator/result')
+      depth_integral%id_output%link%target%output = output_none
 
       call self%request_coupling(self%id_w_int, './w_integrator/result')
       call self%request_coupling(self%id_T_w_int, './T_w_integrator/result')
@@ -363,8 +368,10 @@ contains
         call self%request_coupling(self%id_prey_p(iprey), 'pelprey'//trim(strindex)//'_depth_average/p')
         call self%request_coupling(self%id_prey_s(iprey), 'pelprey'//trim(strindex)//'_depth_average/s')
         call self%couplings%set_string('ave_prey'//trim(strindex), 'pelprey'//trim(strindex)//'_depth_average')
-        call self%get_parameter(w_prey, 'w_prey'//trim(strindex), 'g', 'mass of prey '//trim(strindex))
-        call depth_averaged_prey%set_variable_property(depth_averaged_prey%id_c, 'particle_mass', w_prey)
+        call self%get_parameter(w_prey_min, 'w_prey'//trim(strindex)//'_min', 'g', 'minimum mass of prey '//trim(strindex))
+        call self%get_parameter(w_prey_max, 'w_prey'//trim(strindex)//'_max', 'g', 'maximum mass of prey '//trim(strindex))
+        call depth_averaged_prey%set_variable_property(depth_averaged_prey%id_c, 'min_particle_mass', w_prey_min)
+        call depth_averaged_prey%set_variable_property(depth_averaged_prey%id_c, 'max_particle_mass', w_prey_max)
       end if
    end do
    call self%add_child(total_pelprey_calculator,'total_pelprey_calculator',configunit=-1)
@@ -392,12 +399,12 @@ contains
 
       ! Register state variable, store associated individual mass (used by predators, if any, to determine grazing preference).
       call self%register_state_variable(self%id_c(iclass),'c'//trim(strindex),'mmol m-2','carbon in size class '//trim(strindex), 1.0_rk, minimum=0.0_rk)
-      call self%set_variable_property(self%id_c(iclass),'particle_mass',self%w(iclass))
+      call self%set_variable_property(self%id_c(iclass), 'particle_mass', self%w(iclass))
 
       ! Register this size class' contribution to total mass in the system (for mass conservation checks)
       call self%add_to_aggregate_variable(standard_variables%total_carbon,self%id_c(iclass))
-      call self%add_to_aggregate_variable(standard_variables%total_nitrogen,self%id_c(iclass),scale_factor=self%qnc)
-      call self%add_to_aggregate_variable(standard_variables%total_phosphorus,self%id_c(iclass),scale_factor=self%qpc)
+      call self%add_to_aggregate_variable(standard_variables%total_nitrogen,self%id_c(iclass), scale_factor=self%qnc)
+      call self%add_to_aggregate_variable(standard_variables%total_phosphorus,self%id_c(iclass), scale_factor=self%qpc)
 
       allocate(depth_averaged_class)
       depth_averaged_class%qnc = self%qnc
@@ -426,10 +433,10 @@ contains
    allocate(waste)
    call self%register_model_dependency(name='waste')
    call self%add_child(waste, 'int_waste', configunit=-1)
-   call self%register_bottom_state_dependency(self%id_waste_c,'waste_c','mmol C m-2', 'particulate organic carbon waste')
-   call self%register_bottom_state_dependency(self%id_waste_n,'waste_n','mmol N m-2', 'particulate organic nitrogen waste')
-   call self%register_bottom_state_dependency(self%id_waste_p,'waste_p','mmol P m-2', 'particulate organic phosphorus waste')
-   call self%register_bottom_state_dependency(self%id_waste_s,'waste_s','mmol Si m-2','particulate silicate waste')
+   call self%register_bottom_state_dependency(self%id_waste_c, 'waste_c', 'mmol C m-2', 'particulate organic carbon waste')
+   call self%register_bottom_state_dependency(self%id_waste_n, 'waste_n', 'mmol N m-2', 'particulate organic nitrogen waste')
+   call self%register_bottom_state_dependency(self%id_waste_p, 'waste_p', 'mmol P m-2', 'particulate organic phosphorus waste')
+   call self%register_bottom_state_dependency(self%id_waste_s, 'waste_s', 'mmol Si m-2','particulate silicate waste')
    call self%request_coupling('waste_c', 'int_waste/c_int')
    call self%request_coupling('waste_n', 'int_waste/n_int')
    call self%request_coupling('waste_p', 'int_waste/p_int')
@@ -437,6 +444,19 @@ contains
    call waste%request_coupling('w', '../total_pelprey_calculator/result')
    call waste%request_coupling('w_int', '../w_integrator/result')
    call waste%couplings%set_string('target', '../waste')
+
+   call self%register_bottom_state_dependency(self%id_discard_c, 'discard_c', 'mmol C m-2', 'organic carbon discards')
+   call self%register_bottom_state_dependency(self%id_discard_n, 'discard_n', 'mmol N m-2', 'organic nitrogen discards')
+   call self%register_bottom_state_dependency(self%id_discard_p, 'discard_p', 'mmol P m-2', 'organic phosphorus discards')
+   call self%request_coupling_to_model(self%id_discard_c, 'discards', standard_variables%total_carbon)
+   call self%request_coupling_to_model(self%id_discard_n, 'discards', standard_variables%total_nitrogen)
+   call self%request_coupling_to_model(self%id_discard_p, 'discards', standard_variables%total_phosphorus)
+   call self%couplings%set_string('discards', './int_waste')
+
+   call self%register_state_variable(self%id_landings, 'landings', 'g m-2', 'landed biomass')
+   call self%add_to_aggregate_variable(standard_variables%total_carbon, self%id_landings, scale_factor=1.0_rk/g_per_mmol_carbon)
+   call self%add_to_aggregate_variable(standard_variables%total_nitrogen, self%id_landings, scale_factor=self%qnc/g_per_mmol_carbon)
+   call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_landings, scale_factor=self%qpc/g_per_mmol_carbon)
 
    call self%register_dependency(self%id_c0_proxy, 'c0_proxy', 'mmol C m-3', 'pelagic proxy for biomass in first size class')
    allocate(depth_integral)
@@ -459,29 +479,43 @@ contains
    subroutine after_coupling(self)
       class (type_multi_element_population),intent(inout) :: self
 
-      integer           :: iprey,iclass
+      integer           :: iprey, iclass, i
       character(len=10) :: strindex
-      real(rk)          :: w_p
+      integer, parameter :: n = 100
+      real(rk)          :: w_p, w_p_min, w_p_max, log_w_ps(n)
 
       ! Coupling with prey has completed.
       ! Now we can query all prey for their weight per individual. From that we precompute predator-prey preferences.
-
-      do iprey=1,self%nprey
+      do iprey=1, self%nprey
          ! First retrieve individual mass of prey (throw fatal error if not available)
          w_p = self%id_prey_c(iprey)%link%target%properties%get_real('particle_mass',-1._rk)
-         if (w_p<0) then
-            write (strindex,'(i0)') iprey
-            call self%fatal_error('after_coupling','prey '//trim(strindex)//' does not have attribute "particle_mass" set.')
-         end if
+         w_p_min = self%id_prey_c(iprey)%link%target%properties%get_real('min_particle_mass', -1._rk)
+         w_p_max = self%id_prey_c(iprey)%link%target%properties%get_real('max_particle_mass', -1._rk)
+         if (w_p_min > 0 .and. w_p_max > 0) then
+            ! Create log-spaced gid for prey size range
+            do i = 1, n
+               log_w_ps(i) = log(w_p_min) + real(i - 1, rk) * (log(w_p_max) - log(w_p_min)) / real(n - 1, rk)
+            end do
 
-         ! Compute size-class-specific preference for current prey; Eq 4 in Hartvig et al. 2011 JTB, but note sigma typo confirmed by KH Andersen
-         ! This is a log-normal distribution of prey mass, scaled such that at optimum prey mass (=predator mass/beta), the preference equals 1.
-         ! sigma is the standard deviation in ln mass units.
-         do iclass=1,self%nclass
-            self%phi(iprey,iclass) = exp(-(log(w_p)-self%logw(iclass)+log(self%beta))**2/self%sigma**2/2)
-         end do
+            ! Compute size-class-specific preference for current prey; Eq 4 in Hartvig et al. 2011 JTB, but note sigma typo confirmed by KH Andersen
+            ! This is a log-normal distribution of prey mass, scaled such that at optimum prey mass (=predator mass/beta), the preference equals 1.
+            ! sigma is the standard deviation in ln mass units.
+            do iclass=1, self%nclass
+               self%phi(iprey, iclass) = sum(exp(-(log_w_ps - self%logw(iclass) + log(self%beta))**2 / self%sigma**2 / 2))/n
+            end do
+         elseif (w_p > 0) then
+            ! Compute size-class-specific preference for current prey; Eq 4 in Hartvig et al. 2011 JTB, but note sigma typo confirmed by KH Andersen
+            ! This is a log-normal distribution of prey mass, scaled such that at optimum prey mass (=predator mass/beta), the preference equals 1.
+            ! sigma is the standard deviation in ln mass units.
+            do iclass=1, self%nclass
+               self%phi(iprey, iclass) = exp(-(log(w_p) - self%logw(iclass) + log(self%beta))**2 / self%sigma**2 / 2)
+            end do
+         else
+            write (strindex, '(i0)') iprey
+            call self%fatal_error('after_coupling', 'prey '//trim(strindex)//' does not have attribute "particle_mass" set.')
+         end if
       end do
-      if (any(self%phi<0)) call self%fatal_error('after_coupling','one or more entries of phi are < 0')
+      if (any(self%phi < 0)) call self%fatal_error('after_coupling', 'one or more entries of phi are < 0')
 
    end subroutine after_coupling
 
@@ -633,7 +667,7 @@ contains
          ! Transfer size-class-specific source terms and diagnostics to FABM
          do iclass=1,self%nclass
             ! Apply specific mortality (s-1) to size-class-specific abundances and apply upwind advection - this is a time-explicit version of Eq G.1 of Hartvig et al.
-            _SET_BOTTOM_ODE_(self%id_c(iclass),-mu(iclass)*Nw(iclass) + (nflux(iclass-1)-nflux(iclass))*self%w(iclass)/g_per_mmol_carbon)
+            _SET_BOTTOM_ODE_(self%id_c(iclass),-(mu(iclass) + self%F(iclass))*Nw(iclass) + (nflux(iclass-1)-nflux(iclass))*self%w(iclass)/g_per_mmol_carbon)
 
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g(iclass),g(iclass)*86400)
             if (self%SRR /= 0) then
@@ -650,6 +684,7 @@ contains
          _SET_BOTTOM_ODE_(self%id_waste_n,sum((I_n + (mu - g/(1-self%psi))*self%qnc)*Nw) - R*self%w_min*self%qnc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)
          _SET_BOTTOM_ODE_(self%id_waste_p,sum((I_p + (mu - g/(1-self%psi))*self%qpc)*Nw) - R*self%w_min*self%qpc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)
          _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s*Nw))
+         _SET_BOTTOM_ODE_(self%id_landings,sum(self%F*Nw*g_per_mmol_carbon))
       _HORIZONTAL_LOOP_END_
 
    end subroutine do_bottom
