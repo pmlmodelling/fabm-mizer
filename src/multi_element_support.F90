@@ -96,6 +96,17 @@ module multi_element_support
       procedure :: do => square_do
    end type
 
+   type,extends(type_base_model),public :: type_pelagic_size_spectrum
+      type (type_dependency_id), allocatable :: id_biomass(:)
+      type (type_horizontal_dependency_id), allocatable :: id_biomass_int(:)
+      type (type_horizontal_diagnostic_variable_id) :: id_slope
+      type (type_horizontal_diagnostic_variable_id) :: id_offset
+      real(rk), allocatable :: scale_factors(:, :), mass_grid(:)
+   contains
+      procedure :: initialize => pelagic_size_spectrum_initialize
+      procedure :: do_bottom => pelagic_size_spectrum_do_bottom
+   end type
+
 contains
 
    subroutine depth_averaged_class_initialize(self, configunit)
@@ -357,5 +368,90 @@ contains
         _SET_DIAGNOSTIC_(self%id_result, term1 * term2)
     _LOOP_END_
    end subroutine product_do
+
+   subroutine pelagic_size_spectrum_initialize(self, configunit)
+      class (type_pelagic_size_spectrum), intent(inout), target :: self
+      integer,                            intent(in)            :: configunit
+
+      integer  :: ngrid, nsource, i, isource
+      real(rk) :: w_min, w_max, dlog_w
+      character(len=10)  :: strindex
+      class (type_depth_integral), pointer :: depth_integral
+
+      call self%get_parameter(ngrid, 'ngrid', '', 'grid size', default=100)
+      call self%get_parameter(nsource, 'nsource', '', 'number of source pools')
+      call self%get_parameter(w_min, 'w_min', '', 'minimum weight')
+      call self%get_parameter(w_max, 'w_max', '', 'maximum weight')
+
+      allocate(self%mass_grid(ngrid))
+      allocate(self%scale_factors(ngrid, nsource))
+      allocate(self%id_biomass(nsource))
+      allocate(self%id_biomass_int(nsource))
+      dlog_w = (log(w_max) - log(w_min)) / ngrid
+      do i = 1, ngrid
+         self%mass_grid(i) =  log(w_min) + (i - 0.5_rk) * dlog_w
+      end do
+      self%scale_factors = 0
+
+      do isource = 1, nsource
+        write (strindex,'(i0)') isource
+        call self%register_dependency(self%id_biomass(isource), 'source'//trim(strindex), '<SOURCE UNITS>', 'source '//trim(strindex))
+        call self%get_parameter(w_min, 'w_source'//trim(strindex)//'_min', 'g', 'minimum mass of source '//trim(strindex))
+        call self%get_parameter(w_max, 'w_source'//trim(strindex)//'_max', 'g', 'maximum mass of source '//trim(strindex))
+        do i = 1, ngrid
+           if (self%mass_grid(i) >= log(w_min) .and. self%mass_grid(i) <= log(w_max)) &
+              self%scale_factors(i, isource) = (min(log(w_max), self%mass_grid(i) + dlog_w/2) - max(log(w_min), self%mass_grid(i) - dlog_w/2))/(log(w_max) - log(w_min))
+        end do
+        allocate(depth_integral)
+        call self%add_child(depth_integral, 'source'//trim(strindex)//'_integrator', configunit=-1)
+        call depth_integral%request_coupling('source', '../source'//trim(strindex))
+        call self%register_dependency(self%id_biomass_int(isource), 'source'//trim(strindex)//'_int', '<SOURCE UNITS> m', 'depth integrated source '//trim(strindex))
+        call self%request_coupling(self%id_biomass_int(isource), './source'//trim(strindex)//'_integrator/result')
+      end do
+      do i = 1, size(self%mass_grid)
+         self%scale_factors(i, :) = self%scale_factors(i, :) / (exp(self%mass_grid(i) + dlog_w/2) - exp(self%mass_grid(i) - dlog_w/2))
+      end do
+      call self%register_diagnostic_variable(self%id_slope, 'slope', '-', 'slope of size spectrum')
+      call self%register_diagnostic_variable(self%id_offset, 'offset', '-', 'offset of size spectrum')
+   end subroutine pelagic_size_spectrum_initialize
+
+   subroutine pelagic_size_spectrum_do_bottom(self, _ARGUMENTS_DO_BOTTOM_)
+      class (type_pelagic_size_spectrum), intent(in) :: self
+      _DECLARE_ARGUMENTS_DO_BOTTOM_
+
+      integer  :: isource
+      real(rk) :: spectrum(size(self%mass_grid)), bm_int, cov, var, slope, offset
+      real(rk), allocatable :: x(:),  y(:)
+      integer  :: i, n
+
+      _HORIZONTAL_LOOP_BEGIN_
+         spectrum = 0
+         do isource = 1, size(self%scale_factors, 2)
+            _GET_HORIZONTAL_(self%id_biomass_int(isource), bm_int)
+            spectrum = spectrum + self%scale_factors(:, isource) * bm_int
+         end do
+         n = 0
+         do i = 1, size(self%mass_grid)
+            if (spectrum(i) > 0) n = n + 1
+         end do
+         allocate(x(n))
+         allocate(y(n))
+         n = 0
+         do i = 1, size(self%mass_grid)
+            if (spectrum(i) > 0) then
+               n = n + 1
+               x(n) = self%mass_grid(i)
+               y(n) = log(spectrum(i))
+            end if
+         end do
+         cov = sum(x*y)/n - sum(x)*sum(y)/n/n
+         var = sum(x**2)/n - (sum(x)/n)**2
+         slope = cov/var
+         offset = sum(y)/n - sum(slope*x)/n
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_slope, slope)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_offset, offset)
+      _HORIZONTAL_LOOP_END_
+
+   end subroutine pelagic_size_spectrum_do_bottom
 
 end module multi_element_support

@@ -58,8 +58,7 @@ module mizer_multi_element_population
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_g(:)               ! Specific growth rate per size class
       type (type_dependency_id),                    allocatable :: id_pelprey_c(:)
 
-      type (type_dependency_id)                                 :: id_c0_proxy
-      type (type_horizontal_dependency_id)                      :: id_c0_proxy_int
+      type (type_horizontal_dependency_id) :: id_slope, id_offset
 
       type (type_horizontal_dependency_id)                      :: id_T_w_int
       type (type_horizontal_dependency_id)                      :: id_w_int
@@ -109,7 +108,6 @@ module mizer_multi_element_population
       procedure :: initialize
       procedure :: do_bottom
       procedure :: after_coupling
-      procedure :: check_bottom_state
    end type type_multi_element_population
 
    ! Standard variable ("total mass") used for mass conservation checking
@@ -117,7 +115,7 @@ module mizer_multi_element_population
 
    real(rk) :: Kelvin = 273.15_rk      ! offset of Celsius temperature scale (K)
    real(rk) :: Boltzmann = 8.62e-5_rk  ! Boltzmann constant
-   real(rk) :: g_per_mmol_carbon = 0.012 ! assume 10% of weight is carbon. 1 mmol carbon = 0.0012 g, so that is equivalent to 0.012 g wet weight
+   real(rk) :: g_per_mmol_carbon = 0.012_rk ! assume 10% of weight is carbon. 1 mmol carbon = 0.0012 g, so that is equivalent to 0.012 g wet weight
 !
 !EOP
 !-----------------------------------------------------------------------
@@ -144,7 +142,7 @@ contains
    real(rk)           :: z0pre,z0exp,w_s,z_s
    real(rk)           :: kappa,lambda
    real(rk)           :: T_ref
-   real(rk)           :: S1,S2,F,w_minF
+   real(rk)           :: S1,S2,F,w_minF,F_a,F_b
    integer            :: z0_type
    integer            :: fishing_type
    real(rk)           :: w_prey_min, w_prey_max
@@ -158,6 +156,7 @@ contains
    class (type_depth_integral),       pointer :: depth_integral
    class (type_waste),                pointer :: waste
    class (type_product),              pointer :: product
+   class (type_pelagic_size_spectrum),pointer :: pelagic_size_spectrum
 !EOP
 !-----------------------------------------------------------------------
 !BOC
@@ -194,15 +193,6 @@ contains
       call self%get_parameter(self%R_max, 'R_max','# yr-1','maximum recruitment flux', minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    end select
 
-   call self%get_parameter(fishing_type,'fishing_type','',       'fishing regime (0: none, 1: constant/knife-edge, 2: logistic)',default=0,      minimum=0, maximum=2)
-   if (fishing_type > 0) then
-      call self%get_parameter(w_minF,     'w_minF',     'g',        'minimum weight for fishing selectivity',        default=0.0_rk, minimum=0.0_rk)
-      call self%get_parameter(F,          'F',          'yr-1',     'fishing effort',                                default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
-   end if
-   if (fishing_type == 2) then
-      call self%get_parameter(S1,         'S1',         '-',        'offset for fishing selectivity exponent',       default=0.0_rk, minimum=0.0_rk)
-      call self%get_parameter(S2,         'S2',         'g-1',      'scale factor for fishing selectivity exponent', default=0.0_rk, minimum=0.0_rk)
-   end if
    call self%get_parameter(cannibalism,'cannibalism','',         'whether to enable intraspecific predation', default=.true.)
    if (cannibalism) call self%get_parameter(biomass_has_prey_unit, 'biomass_has_prey_unit', '', 'biomass has the same unit as prey', default=.true.)
    call self%get_parameter(self%qnc,   'qnc',        'mol mol-1','nitrogen to carbon ratio', default=16.0_rk/106.0_rk)
@@ -283,16 +273,29 @@ contains
 
    ! Fishing mortality
    self%F = 0.0_rk
+   call self%get_parameter(fishing_type,'fishing_type', '', 'fishing regime (0: none, 1: constant/knife-edge, 2: logistic)',default=0, minimum=0, maximum=3)
+   if (fishing_type > 0) call self%get_parameter(w_minF, 'w_minF', 'g', 'minimum weight for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
    select case (fishing_type)
    case (1)
       ! constant
+      call self%get_parameter(F, 'F', 'yr-1', 'fishing effort', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
       do iclass=1,self%nclass
-         if (self%w(iclass)>w_minF) self%F(iclass) = F
+         if (self%w(iclass) > w_minF) self%F(iclass) = F
       end do
    case (2)
       ! mizer fishing mortality [s-1]; Eqs M13 and M14 combined
-      do iclass=1,self%nclass
-         if (self%w(iclass)>w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))
+      call self%get_parameter(F,  'F',  'yr-1', 'maximum fishing effort',                        default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+      call self%get_parameter(S1, 'S1', '-',    'offset for fishing selectivity exponent',       default=0.0_rk, minimum=0.0_rk)
+      call self%get_parameter(S2, 'S2', 'g-1',  'scale factor for fishing selectivity exponent', default=0.0_rk, minimum=0.0_rk)
+      do iclass=1, self%nclass
+         if (self%w(iclass) > w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))
+      end do
+   case (3)
+      ! linearly increasing mortality as in Blanchard et al 2009 J Anim Ecol
+      call self%get_parameter(F_a, 'F_a', 'yr-1 (log10 g)-1', 'scale factor for fishing mortality as function of log10 mass', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+      call self%get_parameter(F_b, 'F_b', 'yr-1', 'offset for fishing mortality as function of log10 mass', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+      do iclass=1, self%nclass
+         if (self%w(iclass) > w_minF) self%F(iclass) = F_a * log10(self%w(iclass)) + F_b
       end do
    end select
 
@@ -330,6 +333,11 @@ contains
    write (*,*) 'Fishing mortality at minimum size:',self%F(1)*sec_per_year,'yr-1'
    write (*,*) 'Fishing mortality at maximum size:',self%F(self%nclass)*sec_per_year,'yr-1'
    end if
+
+   allocate(pelagic_size_spectrum)
+   call pelagic_size_spectrum%parameters%set_integer('nsource', self%nprey)
+   call pelagic_size_spectrum%parameters%set_real('w_min', self%w_min/self%beta**2)
+   call pelagic_size_spectrum%parameters%set_real('w_max', self%w_min)
 
    ! Register dependencies for all prey.
    ! If the population is cannibalistic, autoamtically add all our size classes to the set of prey types.
@@ -372,8 +380,13 @@ contains
         call self%get_parameter(w_prey_max, 'w_prey'//trim(strindex)//'_max', 'g', 'maximum mass of prey '//trim(strindex))
         call depth_averaged_prey%set_variable_property(depth_averaged_prey%id_c, 'min_particle_mass', w_prey_min)
         call depth_averaged_prey%set_variable_property(depth_averaged_prey%id_c, 'max_particle_mass', w_prey_max)
+        call pelagic_size_spectrum%parameters%set_real('w_source'//trim(strindex)//'_min', w_prey_min)
+        call pelagic_size_spectrum%parameters%set_real('w_source'//trim(strindex)//'_max', w_prey_max)
+        call pelagic_size_spectrum%couplings%set_string('source'//trim(strindex), '../pelprey_c'//trim(strindex))
       end if
    end do
+   call self%add_child(pelagic_size_spectrum, 'pelagic_size_spectrum', configunit=-1)
+
    call self%add_child(total_pelprey_calculator,'total_pelprey_calculator',configunit=-1)
 
    allocate(depth_integral)
@@ -390,7 +403,7 @@ contains
 
    ! Allocate size-class-specific identifiers for abundance state variable and diagnostics.
    allocate(self%id_c(self%nclass))
-   if (self%SRR /= 0)  allocate(self%id_reproduction(self%nclass))
+   if (self%SRR == 1 .or. self%SRR == 2)  allocate(self%id_reproduction(self%nclass))
    allocate(self%id_f(self%nclass))
    allocate(self%id_g(self%nclass))
    do iclass=1,self%nclass
@@ -422,7 +435,7 @@ contains
       end if
 
       ! Register size-class-specific diagnostics
-      if (self%SRR /= 0) call self%register_diagnostic_variable(self%id_reproduction(iclass),'reproduction'//trim(strindex),'g m-2 d-1','allocation to reproduction in size class '//trim(strindex),         source=source_do_bottom)
+      if (self%SRR == 1 .or. self%SRR == 2) call self%register_diagnostic_variable(self%id_reproduction(iclass),'reproduction'//trim(strindex),'g m-2 d-1','allocation to reproduction in size class '//trim(strindex),         source=source_do_bottom)
       call self%register_diagnostic_variable(self%id_f(iclass),           'f'//trim(strindex),           '-',        'functional response of size class '//trim(strindex),                source=source_do_bottom)
       call self%register_diagnostic_variable(self%id_g(iclass),           'g'//trim(strindex),           'd-1',      'specific growth rate of individuals in size class '//trim(strindex),source=source_do_bottom)
    end do
@@ -458,17 +471,17 @@ contains
    call self%add_to_aggregate_variable(standard_variables%total_nitrogen, self%id_landings, scale_factor=self%qnc/g_per_mmol_carbon)
    call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_landings, scale_factor=self%qpc/g_per_mmol_carbon)
 
-   call self%register_dependency(self%id_c0_proxy, 'c0_proxy', 'mmol C m-3', 'pelagic proxy for biomass in first size class')
-   allocate(depth_integral)
-   call self%add_child(depth_integral, 'c0_proxy_integrator', configunit=-1)
-   call depth_integral%request_coupling('source', '../c0_proxy')
-   call self%register_dependency(self%id_c0_proxy_int, 'c0_proxy_int', 'mmol C m-2', 'depth-integrated proxy for biomass in first size class')
-   call self%request_coupling(self%id_c0_proxy_int, './c0_proxy_integrator/result')
-   call self%get_parameter(self%c0_proxy_width, 'c0_proxy_width', 'ln', 'ln width of mass range of c0 proxy', minimum=0.0_rk)
-
    ! Register diagnostic for total offspring production across population.
-   call self%register_diagnostic_variable(self%id_total_reproduction,'total_reproduction','g m-2 d-1','total reproduction',source=source_do_bottom)
-   call self%register_diagnostic_variable(self%id_R_p,'R_p','# d-1','density-independent recruitment',source=source_do_bottom)
+   if (self%SRR == 1 .or. self%SRR == 2) then
+      call self%register_diagnostic_variable(self%id_total_reproduction,'total_reproduction','g m-2 d-1','total reproduction',source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_R_p,'R_p','# d-1','density-independent recruitment',source=source_do_bottom)
+   elseif (self%SRR == 3) then
+      ! Infer biomass of lowest size class by extending spectrum of (small) prey
+      call self%register_dependency(self%id_offset, 'prey_spectrum_offset', '-', 'offset of pelagic prey spectrum')
+      call self%register_dependency(self%id_slope, 'prey_spectrum_slope', '-', 'slope of pelagic prey spectrum')
+      call self%request_coupling(self%id_offset, './pelagic_size_spectrum/offset')
+      call self%request_coupling(self%id_slope, './pelagic_size_spectrum/slope')
+   end if
    call self%register_diagnostic_variable(self%id_R,'R','# d-1','recruitment',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_tot, 'c_tot', 'g m-2', 'total biomass', source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_small, 'c_small', 'g m-2', 'small fish', source=source_do_bottom)
@@ -524,7 +537,7 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey,istate
-      real(rk) :: c_small
+      real(rk) :: c_small, slope, offset, endpoint, eggs
       real(rk) :: E_e,E_a_c,E_a_n,E_a_p,E_a_s,f,total_reproduction,T_lim,temp,T_w_int,w_int,g_tot,R,R_p,nflux(0:self%nclass),prey_state,g_tot_c,g_tot_n,g_tot_p
       real(rk),dimension(self%nprey)  :: prey_c,prey_n,prey_p,prey_s,prey_loss
       real(rk),dimension(self%nclass) :: Nw,I_c,I_n,I_p,I_s,maintenance,g,mu,reproduction
@@ -645,9 +658,15 @@ contains
          elseif (self%SRR==1) then
             ! Density-independent recruitment
             R = R_p
-         else
+         elseif (self%SRR==2) then
             ! Beverton-Holt recruitment
             R = self%R_max*R_p/(R_p + self%R_max)
+         else
+            _GET_HORIZONTAL_(self%id_offset, offset)
+            _GET_HORIZONTAL_(self%id_slope, slope)
+            endpoint = offset + slope * log(self%w_min)
+            eggs = exp(endpoint) * self%delta_w(1)
+            R = (eggs - Nw(1))/86400/(self%w_min/g_per_mmol_carbon)*24
          end if
 
          ! Use recruitment as number of incoming individuals for the first size class.
@@ -670,37 +689,26 @@ contains
             _SET_BOTTOM_ODE_(self%id_c(iclass),-(mu(iclass) + self%F(iclass))*Nw(iclass) + (nflux(iclass-1)-nflux(iclass))*self%w(iclass)/g_per_mmol_carbon)
 
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g(iclass),g(iclass)*86400)
-            if (self%SRR /= 0) then
+            if (self%SRR == 1 .or. self%SRR == 2) then
                _SET_HORIZONTAL_DIAGNOSTIC_(self%id_reproduction(iclass),reproduction(iclass)*86400)
             end if
          end do
 
-         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_total_reproduction,total_reproduction*86400)
-         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R_p,R_p*86400)
+         if (self%SRR == 1 .or. self%SRR == 2) then
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_total_reproduction,total_reproduction*86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R_p,R_p*86400)
+         end if
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R,R*86400)
 
          ! Compute waste fluxes: total ingestion plus mortality, minus mass used in growth, minus recruitment, plus growth over right edge of resolved size range.
-         _SET_BOTTOM_ODE_(self%id_waste_c,sum((I_c +  mu - g/(1-self%psi)          )*Nw) - R*self%w_min          + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)
-         _SET_BOTTOM_ODE_(self%id_waste_n,sum((I_n + (mu - g/(1-self%psi))*self%qnc)*Nw) - R*self%w_min*self%qnc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)
-         _SET_BOTTOM_ODE_(self%id_waste_p,sum((I_p + (mu - g/(1-self%psi))*self%qpc)*Nw) - R*self%w_min*self%qpc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)
+         _SET_BOTTOM_ODE_(self%id_waste_c,sum((I_c +  mu - g/(1-self%psi)          )*Nw) - R*self%w_min/g_per_mmol_carbon          + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)
+         _SET_BOTTOM_ODE_(self%id_waste_n,sum((I_n + (mu - g/(1-self%psi))*self%qnc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qnc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)
+         _SET_BOTTOM_ODE_(self%id_waste_p,sum((I_p + (mu - g/(1-self%psi))*self%qpc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qpc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)
          _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s*Nw))
          _SET_BOTTOM_ODE_(self%id_landings,sum(self%F*Nw*g_per_mmol_carbon))
       _HORIZONTAL_LOOP_END_
 
    end subroutine do_bottom
-
-   subroutine check_bottom_state(self, _ARGUMENTS_CHECK_BOTTOM_STATE_)
-      class (type_multi_element_population), intent(in) :: self
-      _DECLARE_ARGUMENTS_CHECK_BOTTOM_STATE_
-
-      real(rk) :: c0_proxy
-
-      _HORIZONTAL_LOOP_BEGIN_
-         _GET_HORIZONTAL_(self%id_c0_proxy_int, c0_proxy)
-         _SET_HORIZONTAL_(self%id_c(1), c0_proxy/self%c0_proxy_width*(self%logw(2)-self%logw(1)))
-      _HORIZONTAL_LOOP_END_
-
-   end subroutine check_bottom_state
 
 !-----------------------------------------------------------------------
 
