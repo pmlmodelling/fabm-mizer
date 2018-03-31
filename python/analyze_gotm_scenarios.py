@@ -55,13 +55,13 @@ for scenario_name in scenarios:
     # prey (currently from GOTM-ERSEM simulation)
     scale_factor = 0.01 # 10 g wet mass/g carbon * 0.001 g C/mg C
     prey = (
-        mizer.Prey('diatoms', esd2mass((20,200)), mizer.datasources.TimeSeries(gotm_result, 'P1_c', weights='h', scale_factor=scale_factor, z='sum')),
-        mizer.Prey('nanophy', esd2mass((2,20)), mizer.datasources.TimeSeries(gotm_result, 'P2_c', weights='h', scale_factor=scale_factor, z='sum')),
-        mizer.Prey('picophy', esd2mass((.2,2)), mizer.datasources.TimeSeries(gotm_result, 'P3_c', weights='h', scale_factor=scale_factor, z='sum')),
-        #mizer.Prey('microphy', esd2mass((20,200)), mizer.datasources.TimeSeries(gotm_result, 'P4_c', weights='h', scale_factor=scale_factor, z='sum')),
-        mizer.Prey('microzoo', esd2mass((20,200)), mizer.datasources.TimeSeries(gotm_result, 'Z5_c', weights='h', scale_factor=scale_factor, z='sum')),
-        mizer.Prey('nanoflag', esd2mass((2,20)), mizer.datasources.TimeSeries(gotm_result, 'Z6_c', weights='h', scale_factor=scale_factor, z='sum')),
-        mizer.Prey('mesozoo', (1e-5,1e-3), mizer.datasources.TimeSeries(gotm_result, 'Z4_c', weights='h', scale_factor=scale_factor, z='sum')),
+        mizer.Prey('diatoms', esd2mass((20,200)), mizer.datasources.TimeSeries(gotm_result, '(P1_c*h).sum(axis=1)', scale_factor=scale_factor, z='sum')),
+        mizer.Prey('nanophy', esd2mass((2,20)), mizer.datasources.TimeSeries(gotm_result, '(P2_c*h).sum(axis=1)', scale_factor=scale_factor, z='sum')),
+        mizer.Prey('picophy', esd2mass((.2,2)), mizer.datasources.TimeSeries(gotm_result, '(P3_c*h).sum(axis=1)', scale_factor=scale_factor, z='sum')),
+        mizer.Prey('microphy', esd2mass((20,200)), mizer.datasources.TimeSeries(gotm_result, '(P4_c*h).sum(axis=1)', scale_factor=scale_factor, z='sum')),
+        mizer.Prey('microzoo', esd2mass((20,200)), mizer.datasources.TimeSeries(gotm_result, '(Z5_c*h).sum(axis=1)', scale_factor=scale_factor, z='sum')),
+        mizer.Prey('nanoflag', esd2mass((2,20)), mizer.datasources.TimeSeries(gotm_result, '(Z6_c*h).sum(axis=1)', scale_factor=scale_factor, z='sum')),
+        mizer.Prey('mesozoo', (1e-5,1e-3), mizer.datasources.TimeSeries(gotm_result, '(Z4_c*h).sum(axis=1)', scale_factor=scale_factor, z='sum')),
     )
     prey_collection = mizer.PreyCollection(*prey)
     prey_collection = mizer.GriddedPreyCollection(prey_collection)

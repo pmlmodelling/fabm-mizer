@@ -1,0 +1,42 @@
+instances:
+  fish:
+    model: mizer/multi_element_population
+    parameters:
+       w_min: 1e-3
+       w_inf: 1e6
+       nclass: 100
+       nprey: 7
+       w_prey1_min: 4.188e-9   # P1; min ESD = 20 um
+       w_prey1_max: 4.188e-6   # P1; max ESD = 200 um
+       w_prey2_min: 4.188e-12  # P2; min ESD = 2 um
+       w_prey2_max: 4.188e-9   # P2; max ESD = 20 um
+       w_prey3_min: 4.188e-15  # P3; min ESD = .2 um
+       w_prey3_max: 4.188e-12  # P3; max ESD = 2 um
+       w_prey4_min: 4.188e-9   # P4; min ESD = 20 um
+       w_prey4_max: 4.188e-6   # P4; max ESD = 200 um
+       w_prey5_min: 4.188e-6 #1e-5       # Z4
+       w_prey5_max: 1e-3       # Z4
+       w_prey6_min: 4.188e-9   # Z5; min ESD = 20 um
+       w_prey6_max: 4.188e-6   # Z5; max ESD = 200 um
+       w_prey7_min: 4.188e-12  # Z6; min ESD = 2 um
+       w_prey7_max: 4.188e-9   # Z6; max ESD = 20 um
+       T_dependence: 0
+       E_a: 0.63     # Blanchard et al 2012: 0.63
+       beta: 100     # 0.82 in Blanchard et al 2009; 2012
+       sigma: 2.3025 # Blanchard et al 2009; 2012: 1 in log10 units, here converted to ln units
+       gamma: 640.   # Blanchard et al 2009 640 m3/yr; Blanchard et al 2012: 64 m3/yr [times kappa=0.5 for time spent in pelagic]; Faking giants paper gives 10^14.076 * W^0.926 * exp(-Ea/(kT), which is 428 m3/yr = approx 1 m3/d at 13 degrees for a fish of 1 g. Under this approximation, 1 fish of 1 g per m3 the specific clearance rate is therefore 365 yr-1.
+       q: 0.82       # Blanchard et al 2009; 2012: 0.82; Acuna et al 2011: 0.926
+       alpha: 0.2
+       z0_type: 1
+       z0pre: 0.2
+       z0exp: -0.25
+       w_s: 1000.
+       z_s: 0.3
+       z_spre: 0.2
+       ks: 0.
+       SRR: 3
+       h: 1e9
+       fishing_type: 3
+       w_minF: 10 # Blanchard et al 2009 J Anim Ecol: 10 g
+       F_a: 0.09
+       F_b: 0.04
