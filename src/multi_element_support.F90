@@ -8,8 +8,8 @@ module multi_element_support
 
    implicit none
 
-   type,extends(type_particle_model),public :: type_waste
-      type (type_model_id)      :: id_target
+   type,extends(type_particle_model),public :: type_depth_integrated_sink
+      type (type_model_id) :: id_target
       type (type_horizontal_diagnostic_variable_id) :: id_c_int
       type (type_horizontal_diagnostic_variable_id) :: id_n_int
       type (type_horizontal_diagnostic_variable_id) :: id_p_int
@@ -21,8 +21,8 @@ module multi_element_support
       type (type_dependency_id) :: id_w
       type (type_horizontal_dependency_id) :: id_w_int
    contains
-      procedure :: initialize => waste_initialize
-   end type type_waste
+      procedure :: initialize => depth_integrated_sink_initialize
+   end type type_depth_integrated_sink
    
    type,extends(type_particle_model),public :: type_depth_averaged_prey
       type (type_dependency_id) :: id_w
@@ -140,19 +140,23 @@ contains
     _HORIZONTAL_LOOP_END_
    end subroutine depth_averaged_class_do_bottom
 
-   subroutine waste_initialize(self, configunit)
+   subroutine depth_integrated_sink_initialize(self, configunit)
 !
 ! !INPUT PARAMETERS:
-   class (type_waste), intent(inout), target :: self
-   integer,            intent(in)            :: configunit
+   class (type_depth_integrated_sink), intent(inout), target :: self
+   integer,                            intent(in)            :: configunit
+
+   character(len=10) :: composition
 
    call self%register_model_dependency(self%id_target, 'target')
    call self%register_dependency(self%id_w, 'w', '', 'weights')
    call self%register_dependency(self%id_w_int, 'w_int', '', 'depth integrated weights')
-   call add_constituent('c', 'mmol C', 'carbon', self%id_c_int, self%id_c, standard_variables%total_carbon)
-   call add_constituent('n', 'mmol N', 'nitrogen', self%id_n_int, self%id_n, standard_variables%total_nitrogen)
-   call add_constituent('p', 'mmol P', 'phosphorus', self%id_p_int, self%id_p, standard_variables%total_phosphorus)
-   call add_constituent('s', 'mmol Si', 'silicate', self%id_s_int, self%id_s, standard_variables%total_silicate)
+   
+   call self%get_parameter(composition, 'composition', '', 'elemental composition')
+   if (index(composition, 'c') /= 0)  call add_constituent('c', 'mmol C', 'carbon', self%id_c_int, self%id_c, standard_variables%total_carbon)
+   if (index(composition, 'n') /= 0)  call add_constituent('n', 'mmol N', 'nitrogen', self%id_n_int, self%id_n, standard_variables%total_nitrogen)
+   if (index(composition, 'p') /= 0)  call add_constituent('p', 'mmol P', 'phosphorus', self%id_p_int, self%id_p, standard_variables%total_phosphorus)
+   if (index(composition, 's') /= 0)  call add_constituent('s', 'mmol Si', 'silicate', self%id_s_int, self%id_s, standard_variables%total_silicate)
 
    contains
    
@@ -177,7 +181,7 @@ contains
          call rate_distributor%request_coupling(rate_distributor%id_sms_int, '../'//name//'_int_sms_tot')
       end subroutine
 
-   end subroutine waste_initialize
+   end subroutine depth_integrated_sink_initialize
 
    subroutine relative_rate_distributor_initialize(self, configunit)
       class (type_relative_rate_distributor),intent(inout),target :: self

@@ -46,6 +46,9 @@ module mizer_multi_element_population
       type (type_bottom_state_variable_id)                      :: id_waste_n
       type (type_bottom_state_variable_id)                      :: id_waste_p
       type (type_bottom_state_variable_id)                      :: id_waste_s
+      type (type_bottom_state_variable_id)                      :: id_dic
+      type (type_bottom_state_variable_id)                      :: id_din
+      type (type_bottom_state_variable_id)                      :: id_dip
       type (type_bottom_state_variable_id)                      :: id_discard_c
       type (type_bottom_state_variable_id)                      :: id_discard_n
       type (type_bottom_state_variable_id)                      :: id_discard_p
@@ -139,7 +142,7 @@ contains
    logical            :: cannibalism, biomass_has_prey_unit
    real(rk)           :: delta_logw
    real(rk)           :: k_vb,n,q,p,w_mat,w_inf,gamma,h,ks,f0,z0
-   real(rk)           :: z0pre,z0exp,w_s,z_s
+   real(rk)           :: z0pre,z0exp,w_s,z_s,z_spre
    real(rk)           :: kappa,lambda
    real(rk)           :: T_ref
    real(rk)           :: S1,S2,F,w_minF,F_a,F_b
@@ -154,7 +157,6 @@ contains
    class (type_depth_averaged_class), pointer :: depth_averaged_class
    class (type_square),               pointer :: square
    class (type_depth_integral),       pointer :: depth_integral
-   class (type_waste),                pointer :: waste
    class (type_product),              pointer :: product
    class (type_pelagic_size_spectrum),pointer :: pelagic_size_spectrum
 !EOP
@@ -172,10 +174,11 @@ contains
    call self%get_parameter(q,          'q',      '-',    'exponent of search volume',          default=0.8_rk)
    call self%get_parameter(p,          'p',      '-',    'exponent of standard metabolism',    default=0.7_rk)
    call self%get_parameter(z0_type,    'z0_type','',     'type of background mortality (0: constant, 1: allometric function of size)', default=0)
-   call self%get_parameter(z0pre,      'z0pre',  'yr-1', 'pre-factor for background mortality',default=0.6_rk,   minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+   call self%get_parameter(z0pre,      'z0pre',  'yr-1', 'pre-factor for background mortality (= mortality at 1 g)',default=0.6_rk,   minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    call self%get_parameter(z0exp,      'z0exp',  '-',    'exponent of background mortality',   default=n-1)
    call self%get_parameter(w_s,        'w_s',    'g',    'start weight for senescence mortality',default=0._rk, minimum=0.0_rk)
    call self%get_parameter(z_s,        'z_s',    '-',    'exponent for senescence mortality',default=0.3_rk, minimum=0.0_rk)
+   call self%get_parameter(z_spre,     'z_spre', 'yr-1', 'pre-factor for senescence mortality (= mortality at w_s g)',default=0.2_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    call self%get_parameter(w_mat,      'w_mat',  'g',    'maturation weight', default=0.0_rk, minimum=0.0_rk)
    call self%get_parameter(w_inf,      'w_inf',  'g',    'asymptotic weight', default=1e3_rk, minimum=0.0_rk)
    call self%get_parameter(self%beta,  'beta',   '-',    'preferred predator:prey mass ratio', default=100.0_rk, minimum=0.0_rk)
@@ -261,12 +264,12 @@ contains
    self%std_metab(:) = ks*self%w**(p-1) ! specific metabolism [s-1]; second term in Eq M7, but specific, hence the -1!
    select case (z0_type)
    case (0)
-   self%mu_b(:) = z0                    ! background mortality [s-1]; Eq M11
+      self%mu_b(:) = z0                    ! background mortality [s-1]; Eq M11
    case (1)
       self%mu_b(:) = z0pre*self%w**z0exp
    end select
-   if (w_s>0.0_rk) then
-      self%mu_s = 0.2_rk/sec_per_year*(self%w/w_s)**z_s  ! Blanchard et al. 10.1098/rstb.2012.0231 Table S1
+   if (w_s > 0.0_rk) then
+      self%mu_s = z_spre*(self%w/w_s)**z_s  ! Blanchard et al. 10.1098/rstb.2012.0231 Table S1
    else
       self%mu_s = 0
    end if
@@ -406,12 +409,12 @@ contains
    if (self%SRR == 1 .or. self%SRR == 2)  allocate(self%id_reproduction(self%nclass))
    allocate(self%id_f(self%nclass))
    allocate(self%id_g(self%nclass))
-   do iclass=1,self%nclass
+   do iclass=1, self%nclass
       ! Postfix for size-class-specific variable names (an integer number)
       write (strindex,'(i0)') iclass
 
       ! Register state variable, store associated individual mass (used by predators, if any, to determine grazing preference).
-      call self%register_state_variable(self%id_c(iclass),'c'//trim(strindex),'mmol m-2','carbon in size class '//trim(strindex), 1.0_rk, minimum=0.0_rk)
+      call self%register_state_variable(self%id_c(iclass), 'c'//trim(strindex), 'mmol m-2', 'carbon in size class '//trim(strindex), 1.0_rk, minimum=0.0_rk)
       call self%set_variable_property(self%id_c(iclass), 'particle_mass', self%w(iclass))
 
       ! Register this size class' contribution to total mass in the system (for mass conservation checks)
@@ -443,20 +446,10 @@ contains
    allocate(self%phi(self%nprey,self%nclass))
 
    ! Register a state variable for waste (faeces, maintenance, dead matter resulting from non-predation mortality, fraction of offspring that does not survive)
-   allocate(waste)
-   call self%register_model_dependency(name='waste')
-   call self%add_child(waste, 'int_waste', configunit=-1)
-   call self%register_bottom_state_dependency(self%id_waste_c, 'waste_c', 'mmol C m-2', 'particulate organic carbon waste')
-   call self%register_bottom_state_dependency(self%id_waste_n, 'waste_n', 'mmol N m-2', 'particulate organic nitrogen waste')
-   call self%register_bottom_state_dependency(self%id_waste_p, 'waste_p', 'mmol P m-2', 'particulate organic phosphorus waste')
-   call self%register_bottom_state_dependency(self%id_waste_s, 'waste_s', 'mmol Si m-2','particulate silicate waste')
-   call self%request_coupling('waste_c', 'int_waste/c_int')
-   call self%request_coupling('waste_n', 'int_waste/n_int')
-   call self%request_coupling('waste_p', 'int_waste/p_int')
-   call self%request_coupling('waste_s', 'int_waste/s_int')
-   call waste%request_coupling('w', '../total_pelprey_calculator/result')
-   call waste%request_coupling('w_int', '../w_integrator/result')
-   call waste%couplings%set_string('target', '../waste')
+   call register_waste('egested_matter', 'cnps', self%id_waste_c, self%id_waste_n, self%id_waste_p, self%id_waste_s)
+   call register_waste('respired_carbon', 'c', id_c=self%id_dic)
+   call register_waste('excreted_nitrogen', 'n', id_n=self%id_din)
+   call register_waste('excreted_phosphorus', 'p', id_p=self%id_dip)
 
    call self%register_bottom_state_dependency(self%id_discard_c, 'discard_c', 'mmol C m-2', 'organic carbon discards')
    call self%register_bottom_state_dependency(self%id_discard_n, 'discard_n', 'mmol N m-2', 'organic nitrogen discards')
@@ -464,7 +457,7 @@ contains
    call self%request_coupling_to_model(self%id_discard_c, 'discards', standard_variables%total_carbon)
    call self%request_coupling_to_model(self%id_discard_n, 'discards', standard_variables%total_nitrogen)
    call self%request_coupling_to_model(self%id_discard_p, 'discards', standard_variables%total_phosphorus)
-   call self%couplings%set_string('discards', './int_waste')
+   call self%couplings%set_string('discards', './egested_matter')
 
    call self%register_state_variable(self%id_landings, 'landings', 'g m-2', 'landed biomass')
    call self%add_to_aggregate_variable(standard_variables%total_carbon, self%id_landings, scale_factor=1.0_rk/g_per_mmol_carbon)
@@ -485,6 +478,39 @@ contains
    call self%register_diagnostic_variable(self%id_R,'R','# d-1','recruitment',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_tot, 'c_tot', 'g m-2', 'total biomass', source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_small, 'c_small', 'g m-2', 'small fish', source=source_do_bottom)
+
+   contains
+   
+   subroutine register_waste(name, composition, id_c, id_n, id_p, id_s)
+      character(len=*), intent(in) :: name, composition
+      type (type_bottom_state_variable_id), intent(inout), target, optional :: id_c, id_n, id_p, id_s
+
+      class (type_depth_integrated_sink),pointer :: waste
+
+      allocate(waste)
+      call waste%parameters%set_string('composition', composition)
+      call self%register_model_dependency(name=name)
+      call self%add_child(waste, name//'_int', configunit=-1)
+      if (present(id_c)) then
+         call self%register_bottom_state_dependency(id_c, name//'_c', 'mmol C m-2', 'particulate organic carbon waste')
+         call self%request_coupling(id_c, name//'_int/c_int')
+      end if
+      if (present(id_n)) then
+         call self%register_bottom_state_dependency(id_n, name//'_n', 'mmol N m-2', 'particulate organic nitrogen waste')
+         call self%request_coupling(id_n, name//'_int/n_int')
+      end if
+      if (present(id_p)) then
+         call self%register_bottom_state_dependency(id_p, name//'_p', 'mmol P m-2', 'particulate organic phosphorus waste')
+         call self%request_coupling(id_p, name//'_int/p_int')
+      end if
+      if (present(id_s)) then
+         call self%register_bottom_state_dependency(id_s, name//'_s', 'mmol Si m-2','particulate silicate waste')
+         call self%request_coupling(id_s, name//'_int/s_int')
+      end if
+      call waste%request_coupling('w', '../total_pelprey_calculator/result')
+      call waste%request_coupling('w_int', '../w_integrator/result')
+      call waste%couplings%set_string('target', '../'//name)
+   end subroutine
 
    end subroutine initialize
 !EOC
