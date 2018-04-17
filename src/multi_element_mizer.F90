@@ -91,6 +91,7 @@ module mizer_multi_element_population
       real(rk) :: R_max       ! maximum recruitment flux (SSR=2)
       real(rk) :: qnc         ! nitrogen:carbon ratio (mol:mol, constant)
       real(rk) :: qpc         ! phosphorus:carbon ratio (mol:mol, constant)
+      real(rk) :: alpha_eg    ! fraction of food that is egested
 
       integer  :: T_dependence ! Type of temperature dependence (0: none, 1: Arrhenius)
       real(rk) :: c1           ! Reference constant in Arrhenius equation = E_a/k/(T_ref+Kelvin)
@@ -169,6 +170,8 @@ contains
    call self%get_parameter(self%nprey, 'nprey',  '',     'number of prey')
    call self%get_parameter(self%alpha, 'alpha',  '-',    'assimilation efficiency',            default=0.6_rk,   minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(self%erepro,'erepro', '-',    'reproductive efficiency',            default=1.0_rk,   minimum=0.0_rk, maximum=1.0_rk)
+   call self%get_parameter(self%alpha, 'alpha',  '-',    'assimilation efficiency',            default=0.6_rk,   minimum=0.0_rk, maximum=1.0_rk)
+   call self%get_parameter(self%alpha_eg, 'alpha_eg',  '-',    'fraction of food egested', default=1-self%alpha,   minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(self%w_min, 'w_min',  'g',    'egg weight',                         default=0.001_rk, minimum=0.0_rk)
    call self%get_parameter(n,          'n',      '-',    'exponent of max. consumption',       default=2.0_rk/3.0_rk)
    call self%get_parameter(q,          'q',      '-',    'exponent of search volume',          default=0.8_rk)
@@ -727,9 +730,12 @@ contains
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R,R*86400)
 
          ! Compute waste fluxes: total ingestion plus mortality, minus mass used in growth, minus recruitment, plus growth over right edge of resolved size range.
-         _SET_BOTTOM_ODE_(self%id_waste_c,sum((I_c +  mu - g/(1-self%psi)          )*Nw) - R*self%w_min/g_per_mmol_carbon          + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)
-         _SET_BOTTOM_ODE_(self%id_waste_n,sum((I_n + (mu - g/(1-self%psi))*self%qnc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qnc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)
-         _SET_BOTTOM_ODE_(self%id_waste_p,sum((I_p + (mu - g/(1-self%psi))*self%qpc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qpc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)
+         _SET_BOTTOM_ODE_(self%id_dic,(1-self%alpha-self%alpha_eg)*sum(I_c*Nw))
+         _SET_BOTTOM_ODE_(self%id_din,(1-self%alpha-self%alpha_eg)*sum(I_n*Nw))
+         _SET_BOTTOM_ODE_(self%id_dip,(1-self%alpha-self%alpha_eg)*sum(I_p*Nw))
+         _SET_BOTTOM_ODE_(self%id_waste_c,sum(((self%alpha+self%alpha_eg)*I_c +  mu - g/(1-self%psi)          )*Nw) - R*self%w_min/g_per_mmol_carbon          + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)
+         _SET_BOTTOM_ODE_(self%id_waste_n,sum(((self%alpha+self%alpha_eg)*I_n + (mu - g/(1-self%psi))*self%qnc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qnc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)
+         _SET_BOTTOM_ODE_(self%id_waste_p,sum(((self%alpha+self%alpha_eg)*I_p + (mu - g/(1-self%psi))*self%qpc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qpc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)
          _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s*Nw))
          _SET_BOTTOM_ODE_(self%id_landings,sum(self%F*Nw*g_per_mmol_carbon))
       _HORIZONTAL_LOOP_END_

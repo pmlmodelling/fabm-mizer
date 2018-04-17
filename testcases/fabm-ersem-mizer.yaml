@@ -39,6 +39,7 @@ instances:
        gamma: 640.   # Blanchard et al 2009 640 m3/yr; Blanchard et al 2012: 64 ?UNITS? [times kappa=0.5 for time spent in pelagic]; Faking giants paper gives 10^14.076 * W^0.926 * exp(-Ea/(kT) L d-1, which is 428 L d-1 = 156 m3 yr-1
        q: 0.82      # Blanchard et al 2009; 2012: 0.82; Acuna et al 2011: 0.926
        alpha: 0.2
+       alpha_eg: 0.3
        z0_type: 1
        z0pre: 0.2
        z0exp: -0.25
