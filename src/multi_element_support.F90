@@ -454,6 +454,8 @@ contains
          offset = sum(y)/n - sum(slope*x)/n
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_slope, slope)
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_offset, offset)
+         deallocate(x)
+         deallocate(y)
       _HORIZONTAL_LOOP_END_
 
    end subroutine pelagic_size_spectrum_do_bottom
