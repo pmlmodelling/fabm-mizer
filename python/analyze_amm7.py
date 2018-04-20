@@ -177,10 +177,13 @@ if __name__ == '__main__':
        os.mkdir(args.output_path)
     for path in glob.glob(args.source_path):
         with netCDF4.Dataset(path) as nc:
-            mask = nc.variables['mask']
+            if 'mask' in nc.variables:
+                mask = nc.variables['mask'][...] > 0
+            else:
+                mask = (nc.variables['bm_int'][...] > 0).any(axis=0)
             for i in xrange(len(nc.dimensions['x'])):
                 for j in xrange(len(nc.dimensions['y'])):
-                    if mask[j, i] > 0:
+                    if mask[j, i]:
                         tasks.append((path, i, j))
 
     source2output = {}
