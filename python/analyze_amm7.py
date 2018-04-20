@@ -69,10 +69,10 @@ parameters = {
     'F': 0.8  # note: need to put double the intended value due to fisheries equation!
 }
 
-def addVariable(nc, name, long_name, units, data=None, dimensions=None, zlib=False):
+def addVariable(nc, name, long_name, units, data=None, dimensions=None, zlib=False, contiguous=True):
     if dimensions is None:
         dimensions = (time_name,)
-    ncvar = nc.createVariable(name, float, dimensions, zlib=zlib, fill_value=-2e20)
+    ncvar = nc.createVariable(name, float, dimensions, zlib=zlib, fill_value=-2e20, contiguous=contiguous)
     if data is not None:
         ncvar[:] = data
     ncvar.long_name = long_name
@@ -125,7 +125,7 @@ def processLocation(args):
     lfi10000 = result.get_lfi_timeseries(10000.)
     landings[1:] = landings[1:] - landings[:-1]
     landings[0] = 0
-    return path, i, j, times, biomass, landings, lfi80, lfi500, lfi10000
+    return path, i, j, times, biomass, landings, lfi80, lfi500, lfi10000, result.spectrum
 
 def ppProcessLocation(args):
     import analyze_amm7
@@ -177,7 +177,7 @@ if __name__ == '__main__':
                         tasks.append((path, i, j))
 
     source2output = {}
-    def getOutput(source, times, compress=False):
+    def getOutput(source, times, compress=False, add_biomass_per_bin=False):
         if source not in source2output:
             with netCDF4.Dataset(path) as nc:
                 output_path = os.path.join(args.output_path, os.path.basename(source))
@@ -190,23 +190,28 @@ if __name__ == '__main__':
                 nctime_out.units = nctime_in.units
                 dates = [dt.replace(tzinfo=None) for dt in num2date(times)]
                 nctime_out[...] = netCDF4.date2num(dates, nctime_out.units)
-                ncbiomass = addVariable(ncout, 'biomass', 'biomass', 'g WM/m3', dimensions=(time_name, 'y', 'x'), zlib=compress)
+                ncbiomass = addVariable(ncout, 'biomass', 'biomass', 'g WM/m2', dimensions=(time_name, 'y', 'x'), zlib=compress)
                 nclandings = addVariable(ncout, 'landings', 'landings', 'g WM', dimensions=(time_name, 'y', 'x'), zlib=compress)
                 nclfi80 = addVariable(ncout, 'lfi80', 'fraction of fish > 80 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress)
                 nclfi500 = addVariable(ncout, 'lfi500', 'fraction of fish > 500 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress)
                 nclfi10000 = addVariable(ncout, 'lfi10000', 'fraction of fish > 10000 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress)
+                if add_biomass_per_bin:
+                    ncbm = addVariable(ncout, 'Nw%i' % (i+1), 'biomass in bin %i' % (i + 1), 'g WM/m2', dimensions=(time_name, 'y', 'x'), zlib=compress)
             source2output[source] = ncout
         return source2output[source]
 
-    def saveResult(result, sync=True):
-        source, i, j, times, biomass, landings, lfi80, lfi500, lfi10000 = result
+    def saveResult(result, sync=True, add_biomass_per_bin=False):
+        source, i, j, times, biomass, landings, lfi80, lfi500, lfi10000, spectrum = result
         print('saving results from %s, i=%i, j=%i' % (source, i, j))
-        ncout = getOutput(source, times)
+        ncout = getOutput(source, times, add_biomass_per_bin=add_biomass_per_bin)
         ncout.variables['biomass'][:, j, i] = biomass
         ncout.variables['landings'][:, j, i] = landings
         ncout.variables['lfi80'][:, j, i] = lfi80
         ncout.variables['lfi500'][:, j, i] = lfi500
         ncout.variables['lfi10000'][:, j, i] = lfi10000
+        if add_biomass_per_bin:
+            for i in range(spectrum.shape[1]):
+                ncout.variables['Nw%i' % (i+1)][:, j, i] = spectrum[:, i]
         if sync:
            ncout.sync()
 
@@ -232,7 +237,7 @@ if __name__ == '__main__':
         #result.wait()
 
         for result in pool.imap(processLocation, tasks):
-            saveResult(resulti, sync=False)
+            saveResult(result, sync=False, add_biomass_per_bin=True)
     else:
         if args.debug:
             import logging
@@ -248,7 +253,7 @@ if __name__ == '__main__':
             result = job()
             if result is not None:
                print('job %i: saving result...' % ijob)
-               saveResult(result, sync=False)
+               saveResult(result, sync=False, add_biomass_per_bin=True)
             else:
                print('job %i: FAILED!' % ijob)
         job_server.print_stats()
