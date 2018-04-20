@@ -13,7 +13,7 @@ module mizer_size_structured_population
 !
 ! Blanchard, J. L., Andersen, K. H., Scott, F., Hintzen, N. T., Piet, G., & Jennings, S. (2014)
 ! Evaluating targets and trade-offs among fisheries and conservation objectives using a multispecies size spectrum model
-! Journal of Applied Ecology, 51(3), 612–622
+! Journal of Applied Ecology, 51(3), 612-622
 ! doi:10.1111/1365-2664.12238
 !
 ! Notation mostly follows the mizer R package.
@@ -130,10 +130,10 @@ contains
    logical            :: cannibalism, biomass_has_prey_unit
    real(rk)           :: delta_logw
    real(rk)           :: k_vb,n,q,p,w_mat,w_inf,gamma,h,ks,f0,z0
-   real(rk)           :: z0pre,z0exp,w_s,z_s
+   real(rk)           :: z0pre,z0exp,w_s,z_s,z_spre
    real(rk)           :: kappa,lambda
    real(rk)           :: T_ref
-   real(rk)           :: S1,S2,F,w_minF
+   real(rk)           :: S1,S2,F,w_minF,F_a,F_b
    integer            :: z0_type
    integer            :: fishing_type
    character(len=10)  :: strindex
@@ -156,10 +156,11 @@ contains
    call self%get_parameter(q,          'q',      '-',    'exponent of search volume',          default=0.8_rk)
    call self%get_parameter(p,          'p',      '-',    'exponent of standard metabolism',    default=0.7_rk)
    call self%get_parameter(z0_type,    'z0_type','',     'type of background mortality (0: constant, 1: allometric function of size)', default=0)
-   call self%get_parameter(z0pre,      'z0pre',  'yr-1', 'pre-factor for background mortality',default=0.6_rk,   minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+   call self%get_parameter(z0pre,      'z0pre',  'yr-1', 'pre-factor for background mortality (= mortality at 1 g)',default=0.6_rk,   minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    call self%get_parameter(z0exp,      'z0exp',  '-',    'exponent of background mortality',   default=n-1)
    call self%get_parameter(w_s,        'w_s',    'g',    'start weight for senescence mortality',default=0._rk, minimum=0.0_rk)
    call self%get_parameter(z_s,        'z_s',    '-',    'exponent for senescence mortality',default=0.3_rk, minimum=0.0_rk)
+   call self%get_parameter(z_spre,     'z_spre', 'yr-1', 'pre-factor for senescence mortality (= mortality at w_s g)',default=0.2_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    call self%get_parameter(w_mat,      'w_mat',  'g',    'maturation weight', default=0.0_rk, minimum=0.0_rk)
    call self%get_parameter(w_inf,      'w_inf',  'g',    'asymptotic weight', default=1e3_rk, minimum=0.0_rk)
    call self%get_parameter(self%beta,  'beta',   '-',    'preferred predator:prey mass ratio', default=100.0_rk, minimum=0.0_rk)
@@ -177,15 +178,6 @@ contains
       call self%get_parameter(self%R_max, 'R_max','# yr-1','maximum recruitment flux', minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    end select
 
-   call self%get_parameter(fishing_type,'fishing_type','',       'fishing regime (0: none, 1: constant/knife-edge, 2: logistic)',default=0,      minimum=0, maximum=2)
-   if (fishing_type > 0) then
-      call self%get_parameter(w_minF,     'w_minF',     'g',        'minimum weight for fishing selectivity',        default=0.0_rk, minimum=0.0_rk)
-      call self%get_parameter(F,          'F',          'yr-1',     'fishing effort',                                default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
-   end if
-   if (fishing_type == 2) then
-      call self%get_parameter(S1,         'S1',         '-',        'offset for fishing selectivity exponent',       default=0.0_rk, minimum=0.0_rk)
-      call self%get_parameter(S2,         'S2',         'g-1',      'scale factor for fishing selectivity exponent', default=0.0_rk, minimum=0.0_rk)
-   end if
    call self%get_parameter(cannibalism,'cannibalism','',         'whether to enable intraspecific predation', default=.true.)
    if (cannibalism) call self%get_parameter(biomass_has_prey_unit, 'biomass_has_prey_unit', '', 'biomass has the same unit as prey', default=.true.)
 
@@ -240,24 +232,37 @@ contains
    case (1)
       self%mu_b(:) = z0pre*self%w**z0exp
    end select
-   if (w_s>0.0_rk) then
-      self%mu_s = 0.2_rk/sec_per_year*(self%w/w_s)**z_s  ! Blanchard et al. 10.1098/rstb.2012.0231 Table S1
+   if (w_s > 0.0_rk) then
+      self%mu_s = z_spre*(self%w/w_s)**z_s  ! Blanchard et al. 10.1098/rstb.2012.0231 Table S1
    else
       self%mu_s = 0
    end if
 
    ! Fishing mortality
    self%F = 0.0_rk
+   call self%get_parameter(fishing_type,'fishing_type', '', 'fishing regime (0: none, 1: constant/knife-edge, 2: logistic)',default=0, minimum=0, maximum=3)
+   if (fishing_type > 0) call self%get_parameter(w_minF, 'w_minF', 'g', 'minimum weight for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
    select case (fishing_type)
    case (1)
       ! constant
+      call self%get_parameter(F, 'F', 'yr-1', 'fishing effort', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
       do iclass=1,self%nclass
-         if (self%w(iclass)>w_minF) self%F(iclass) = F
+         if (self%w(iclass) > w_minF) self%F(iclass) = F
       end do
    case (2)
       ! mizer fishing mortality [s-1]; Eqs M13 and M14 combined
-      do iclass=1,self%nclass
-         if (self%w(iclass)>w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))
+      call self%get_parameter(F,  'F',  'yr-1', 'maximum fishing effort',                        default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+      call self%get_parameter(S1, 'S1', '-',    'offset for fishing selectivity exponent',       default=0.0_rk, minimum=0.0_rk)
+      call self%get_parameter(S2, 'S2', 'g-1',  'scale factor for fishing selectivity exponent', default=0.0_rk, minimum=0.0_rk)
+      do iclass=1, self%nclass
+         if (self%w(iclass) > w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))
+      end do
+   case (3)
+      ! linearly increasing mortality as in Blanchard et al 2009 J Anim Ecol
+      call self%get_parameter(F_a, 'F_a', 'yr-1 (log10 g)-1', 'scale factor for fishing mortality as function of log10 mass', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+      call self%get_parameter(F_b, 'F_b', 'yr-1', 'offset for fishing mortality as function of log10 mass', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+      do iclass=1, self%nclass
+         if (self%w(iclass) > w_minF) self%F(iclass) = F_a * log10(self%w(iclass)) + F_b
       end do
    end select
 
@@ -315,8 +320,8 @@ contains
       write (strindex,'(i0)') iclass
 
       ! Register state variable, store associated individual mass (used by predators, if any, to determine grazing preference).
-      call self%register_state_variable(self%id_Nw(iclass),'Nw'//trim(strindex),'g m-2','biomass in size class '//trim(strindex), 1.0_rk, minimum=0.0_rk)
-      call self%set_variable_property(self%id_Nw(iclass),'particle_mass',self%w(iclass))
+      call self%register_state_variable(self%id_Nw(iclass), 'Nw'//trim(strindex), 'g m-2', 'biomass in size class '//trim(strindex), 1.0_rk, minimum=0.0_rk)
+      call self%set_variable_property(self%id_Nw(iclass), 'particle_mass',self%w(iclass))
 
       ! Register this size class' contribution to total mass in the system (for mass conservation checks)
       call self%add_to_aggregate_variable(total_mass,self%id_Nw(iclass))
@@ -408,11 +413,11 @@ contains
          ! Compute size-class-specific preference for current prey; Eq 4 in Hartvig et al. 2011 JTB, but note sigma typo confirmed by KH Andersen
          ! This is a log-normal distribution of prey mass, scaled such that at optimum prey mass (=predator mass/beta), the preference equals 1.
          ! sigma is the standard deviation in ln mass units.
-         do iclass=1,self%nclass
-            self%phi(iprey,iclass) = exp(-(log(w_p)-self%logw(iclass)+log(self%beta))**2/self%sigma**2/2)
+         do iclass=1, self%nclass
+            self%phi(iprey, iclass) = exp(-(log(w_p) - self%logw(iclass) + log(self%beta))**2 / self%sigma**2 / 2)
          end do
       end do
-      if (any(self%phi<0)) call self%fatal_error('after_coupling','one or more entries of phi are < 0')
+      if (any(self%phi < 0)) call self%fatal_error('after_coupling', 'one or more entries of phi are < 0')
 
    end subroutine after_coupling
 
@@ -427,7 +432,7 @@ contains
       real(rk), parameter :: delta_t = 12._rk/86400
 
       _HORIZONTAL_LOOP_BEGIN_
-      
+
          prey_per_biomass = 1
          if (_VARIABLE_REGISTERED_(self%id_biomass_to_prey)) _GET_HORIZONTAL_(self%id_biomass_to_prey, prey_per_biomass)
 
@@ -526,9 +531,11 @@ contains
          elseif (self%SRR==1) then
             ! Density-independent recruitment
             R = R_p
-         else
+         elseif (self%SRR==2) then
             ! Beverton-Holt recruitment
             R = self%R_max*R_p/(R_p + self%R_max)
+         else
+            stop 'SRR<0 or SSR>2 not supported'
          end if
 
          ! Use recruitment as number of incoming individuals for the first size class.
