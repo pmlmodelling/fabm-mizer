@@ -6,6 +6,8 @@ import argparse
 import re
 import shutil
 
+import yaml
+
 import numpy
 from matplotlib import pyplot
 from matplotlib.dates import datestr2num, date2num, num2date
@@ -140,7 +142,12 @@ if __name__ == '__main__':
     parser.add_argument('--ppservers', default=None)
     parser.add_argument('--secret', default=None)
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--parameters', default=None)
     args = parser.parse_args()
+
+    if args.parameters is not None:
+        with open(args.parameters, 'rU') as f:
+            parameters = yaml.load(f)
 
     if isinstance(args.ppservers, basestring):
         match = re.match(r'(.*)\[(.*)\](.*)', args.ppservers)
