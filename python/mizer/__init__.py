@@ -199,7 +199,8 @@ class Mizer(object):
         depth_provider = self.depth_provider
         temperature = self.temperature
         temperature_provider = self.temperature_provider
-        prey_per_biomass = self.prey_per_biomass
+        if depth_provider is not None:
+            prey_per_biomass = self.prey_per_biomass
         prey = self.prey
         prey_indices = self.prey_indices
         ibin0 = self.bin_indices[0]
