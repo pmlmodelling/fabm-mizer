@@ -119,7 +119,7 @@ module mizer_multi_element_population
 
    real(rk) :: Kelvin = 273.15_rk      ! offset of Celsius temperature scale (K)
    real(rk) :: Boltzmann = 8.62e-5_rk  ! Boltzmann constant
-   real(rk) :: g_per_mmol_carbon = 0.012_rk ! assume 10% of weight is carbon. 1 mmol carbon = 0.0012 g, so that is equivalent to 0.012 g wet weight
+   real(rk) :: g_per_mmol_carbon = 0.12_rk ! assume 10% of weight is carbon. 1 mmol carbon = 0.012 g, so that is equivalent to 0.12 g wet weight
 !
 !EOP
 !-----------------------------------------------------------------------
