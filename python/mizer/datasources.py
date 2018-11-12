@@ -45,6 +45,8 @@ class TimeSeries(ValueProvider):
                     location.append('%s=:' % (dim,))
             print('  %s [%s]' % (ncvar.name, ', '.join(location)))
             vardata = ncvar[slc]
+            mask = numpy.ma.getmask(vardata)
+            assert not mask.any(), 'Variable %s in %s contains %i masked values (out of %i). Data: %s. First problem time: %s' % (path, ncvar.name, mask.sum(), mask.size, vardata, num2date(self.times[mask.nonzero()[0]))
             valid = numpy.isfinite(vardata)
             assert valid.all(), 'Variable %s in %s contains non-finite values (NaN?). Data: %s. First problem time: %s' % (path, ncvar.name, vardata, num2date(self.times[numpy.logical_not(valid)][0]))
             return final_dims, vardata
