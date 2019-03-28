@@ -80,7 +80,7 @@ module mizer_multi_element_population
       real(rk),allocatable :: delta_w(:)  ! mass difference between consecutive size classes
 
       ! Size-class-independent parameters
-      real(rk) :: w_min       ! egg weight
+      real(rk) :: w_min       ! egg mass
       real(rk) :: alpha       ! assimilation efficiency
       real(rk) :: beta        ! preferred predator:prey mass ratio
       real(rk) :: sigma       ! s.d. of lognormal prey size selection function
@@ -119,7 +119,7 @@ module mizer_multi_element_population
 
    real(rk) :: Kelvin = 273.15_rk      ! offset of Celsius temperature scale (K)
    real(rk) :: Boltzmann = 8.62e-5_rk  ! Boltzmann constant
-   real(rk) :: g_per_mmol_carbon = 0.12_rk ! assume 10% of weight is carbon. 1 mmol carbon = 0.012 g, so that is equivalent to 0.12 g wet weight
+   real(rk) :: g_per_mmol_carbon = 0.12_rk ! assume 10% of wet mass is carbon. 1 mmol carbon = 0.012 g, so that is equivalent to 0.12 g wet mass
 !
 !EOP
 !-----------------------------------------------------------------------
@@ -150,6 +150,7 @@ contains
    integer            :: z0_type
    integer            :: fishing_type
    real(rk)           :: w_prey_min, w_prey_max
+   real(rk)           :: c_ini
    character(len=10)  :: strindex, strindex2
    real(rk),parameter :: pi = 4*atan(1.0_rk)
    real(rk),parameter :: sec_per_year = 86400*365.2425_rk
@@ -166,26 +167,27 @@ contains
    ! Read parameters
    ! All rate coefficients are converted from d-1 to s-1 ensure source terms are directly compatible with FABM.
    ! Default values taken from Table S5
+   call self%get_parameter(c_ini,'c_ini', 'mmol C/m2',     'initial density per size class', default=0.0_rk)
    call self%get_parameter(self%nclass,'nclass', '',     'number of size classes', default=100)
    call self%get_parameter(self%nprey, 'nprey',  '',     'number of prey')
    call self%get_parameter(self%alpha, 'alpha',  '-',    'assimilation efficiency',            default=0.6_rk,   minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(self%alpha_eg, 'alpha_eg',  '-',    'fraction of food egested', default=1-self%alpha,   minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(self%erepro,'erepro', '-',    'reproductive efficiency',            default=1.0_rk,   minimum=0.0_rk, maximum=1.0_rk)
-   call self%get_parameter(self%w_min, 'w_min',  'g',    'egg weight',                         default=0.001_rk, minimum=0.0_rk)
+   call self%get_parameter(self%w_min, 'w_min',  'g',    'egg mass',                           default=0.001_rk, minimum=0.0_rk)
    call self%get_parameter(n,          'n',      '-',    'exponent of max. consumption',       default=2.0_rk/3.0_rk)
    call self%get_parameter(q,          'q',      '-',    'exponent of search volume',          default=0.8_rk)
    call self%get_parameter(p,          'p',      '-',    'exponent of standard metabolism',    default=0.7_rk)
    call self%get_parameter(z0_type,    'z0_type','',     'type of background mortality (0: constant, 1: allometric function of size)', default=0)
    call self%get_parameter(z0pre,      'z0pre',  'yr-1', 'pre-factor for background mortality (= mortality at 1 g)',default=0.6_rk,   minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    call self%get_parameter(z0exp,      'z0exp',  '-',    'exponent of background mortality',   default=n-1)
-   call self%get_parameter(w_s,        'w_s',    'g',    'start weight for senescence mortality',default=0._rk, minimum=0.0_rk)
+   call self%get_parameter(w_s,        'w_s',    'g',    'start mass for senescence mortality',default=0._rk, minimum=0.0_rk)
    call self%get_parameter(z_s,        'z_s',    '-',    'exponent for senescence mortality',default=0.3_rk, minimum=0.0_rk)
    call self%get_parameter(z_spre,     'z_spre', 'yr-1', 'pre-factor for senescence mortality (= mortality at w_s g)',default=0.2_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
-   call self%get_parameter(w_mat,      'w_mat',  'g',    'maturation weight', default=0.0_rk, minimum=0.0_rk)
-   call self%get_parameter(w_inf,      'w_inf',  'g',    'asymptotic weight', default=1e3_rk, minimum=0.0_rk)
+   call self%get_parameter(w_mat,      'w_mat',  'g',    'maturation mass', default=0.0_rk, minimum=0.0_rk)
+   call self%get_parameter(w_inf,      'w_inf',  'g',    'asymptotic mass', default=1e3_rk, minimum=0.0_rk)
    call self%get_parameter(self%beta,  'beta',   '-',    'preferred predator:prey mass ratio', default=100.0_rk, minimum=0.0_rk)
-   call self%get_parameter(self%sigma, 'sigma',  '-',    'width of prey size preference (sd in ln weight units)', default=1.0_rk, minimum=0.0_rk)
-   call self%get_parameter(self%xi,    'xi',     '-',    'fraction of weight consisting of lipid reserve', default=0.1_rk, minimum=0.0_rk, maximum=1.0_rk)
+   call self%get_parameter(self%sigma, 'sigma',  '-',    'width of prey size preference (sd in ln mass units)', default=1.0_rk, minimum=0.0_rk)
+   call self%get_parameter(self%xi,    'xi',     '-',    'fraction of mass consisting of lipid reserve', default=0.1_rk, minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(k_vb,       'k_vb',   'yr-1', 'von Bertalanffy growth rate', minimum=0.0_rk, default=0.0_rk, scale_factor=1._rk/sec_per_year)
    call self%get_parameter(lambda,     'lambda', '-',        'exponent of background resource spectrum', default=2+q-n)
    call self%get_parameter(kappa,      'kappa',  'g^(lambda-1)','carrying capacity of background resource spectrum', default=1e11_rk, minimum=0.0_rk)
@@ -261,7 +263,7 @@ contains
    allocate(self%psi(self%nclass))
    allocate(self%V(self%nclass))
    self%V(:) = gamma*self%w**(q-1)      ! specific volumetric search rate [m3 s-1 g-1] (mass-specific, hence the -1!)
-   self%V = self%V * g_per_mmol_carbon  ! express volumetric search rate mmol carbon (instead of per g)
+   self%V = self%V * g_per_mmol_carbon  ! express volumetric search rate per mmol carbon (instead of per g)
    self%I_max(:) = h*self%w**(n-1)      ! specific maximum ingestion rate [s-1]; Eq M4, but specific, hence the -1!
    self%std_metab(:) = ks*self%w**(p-1) ! specific metabolism [s-1]; second term in Eq M7, but specific, hence the -1!
    select case (z0_type)
@@ -279,7 +281,7 @@ contains
    ! Fishing mortality
    self%F = 0.0_rk
    call self%get_parameter(fishing_type,'fishing_type', '', 'fishing regime (0: none, 1: constant/knife-edge, 2: logistic)',default=0, minimum=0, maximum=3)
-   if (fishing_type > 0) call self%get_parameter(w_minF, 'w_minF', 'g', 'minimum weight for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
+   if (fishing_type > 0) call self%get_parameter(w_minF, 'w_minF', 'g', 'minimum mass for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
    select case (fishing_type)
    case (1)
       ! constant
@@ -312,29 +314,29 @@ contains
    end if
    if (.false.) then
    write (*,*) 'Specific search volume (yr-1):'
-   write (*,*) '  @ weight = 1:',gamma*sec_per_year,'(gamma)'
-   write (*,*) '  @ minimum weight:',self%V(1)*sec_per_year
-   write (*,*) '  @ maximum weight:',self%V(self%nclass)*sec_per_year
+   write (*,*) '  @ mass = 1:',gamma*sec_per_year,'(gamma)'
+   write (*,*) '  @ minimum mass:',self%V(1)*sec_per_year
+   write (*,*) '  @ maximum mass:',self%V(self%nclass)*sec_per_year
    write (*,*) 'Specific ingestion rate (yr-1)'
-   write (*,*) '  @ weight = 1:',h*sec_per_year,'(h)'
-   write (*,*) '  @ minimum weight:',self%I_max(1)*sec_per_year
-   write (*,*) '  @ maximum weight:',self%I_max(self%nclass)*sec_per_year
+   write (*,*) '  @ mass = 1:',h*sec_per_year,'(h)'
+   write (*,*) '  @ minimum mass:',self%I_max(1)*sec_per_year
+   write (*,*) '  @ maximum mass:',self%I_max(self%nclass)*sec_per_year
    write (*,*) 'Specific metabolism (yr-1):'
-   write (*,*) '  @ weight = 1:',self%std_metab(1)*sec_per_year,'(ks)'
-   write (*,*) '  @ minimum weight:',self%std_metab(1)*sec_per_year
-   write (*,*) '  @ maximum weight:',self%std_metab(self%nclass)*sec_per_year
+   write (*,*) '  @ mass = 1:',self%std_metab(1)*sec_per_year,'(ks)'
+   write (*,*) '  @ minimum mass:',self%std_metab(1)*sec_per_year
+   write (*,*) '  @ maximum mass:',self%std_metab(self%nclass)*sec_per_year
    write (*,*) 'Background mortality (yr-1):'
    select case (z0_type)
    case (0)
-   write (*,*) '  @ weight = 1:',z0*sec_per_year,'(z0)'
+   write (*,*) '  @ mass = 1:',z0*sec_per_year,'(z0)'
    case (1)
-      write (*,*) '  @ weight = 1:',z0pre*sec_per_year,'(z0pre)'
+      write (*,*) '  @ mass = 1:',z0pre*sec_per_year,'(z0pre)'
    end select
-   write (*,*) '  @ minimum weight:',self%mu_b(1)*sec_per_year
-   write (*,*) '  @ maximum weight:',self%mu_b(self%nclass)*sec_per_year
+   write (*,*) '  @ minimum mass:',self%mu_b(1)*sec_per_year
+   write (*,*) '  @ maximum mass:',self%mu_b(self%nclass)*sec_per_year
    write (*,*) 'Senescence mortality (yr-1):'
-   write (*,*) '  @ minimum weight:',self%mu_s(1)*sec_per_year
-   write (*,*) '  @ maximum weight:',self%mu_s(self%nclass)*sec_per_year
+   write (*,*) '  @ minimum mass:',self%mu_s(1)*sec_per_year
+   write (*,*) '  @ maximum mass:',self%mu_s(self%nclass)*sec_per_year
    write (*,*) 'Fishing mortality at minimum size:',self%F(1)*sec_per_year,'yr-1'
    write (*,*) 'Fishing mortality at maximum size:',self%F(self%nclass)*sec_per_year,'yr-1'
    end if
@@ -416,7 +418,7 @@ contains
       write (strindex,'(i0)') iclass
 
       ! Register state variable, store associated individual mass (used by predators, if any, to determine grazing preference).
-      call self%register_state_variable(self%id_c(iclass), 'c'//trim(strindex), 'mmol m-2', 'carbon in size class '//trim(strindex), 1.0_rk, minimum=0.0_rk)
+      call self%register_state_variable(self%id_c(iclass), 'c'//trim(strindex), 'mmol m-2', 'carbon in size class '//trim(strindex), c_ini, minimum=0.0_rk)
       call self%set_variable_property(self%id_c(iclass), 'particle_mass', self%w(iclass))
 
       ! Register this size class' contribution to total mass in the system (for mass conservation checks)
@@ -526,7 +528,7 @@ contains
       real(rk)          :: w_p, w_p_min, w_p_max, log_w_ps(n)
 
       ! Coupling with prey has completed.
-      ! Now we can query all prey for their weight per individual. From that we precompute predator-prey preferences.
+      ! Now we can query all prey for their wet mass per individual. From that we precompute predator-prey preferences.
       do iprey=1, self%nprey
          ! First retrieve individual mass of prey (throw fatal error if not available)
          w_p = self%id_prey_c(iprey)%link%target%properties%get_real('particle_mass',-1._rk)
@@ -605,7 +607,7 @@ contains
          ! This computes total ingestion per size class (over all prey), and total loss per prey type (over all size classes)
          prey_loss = 0.0_rk
          do iclass=1,self%nclass
-            ! Compute total prey availability (carbon concentration summed over all prey, scaled with prey-specific preference)
+            ! Compute total prey availability (concentration summed over all prey, scaled with prey-specific preference)
             E_a_c = sum(self%phi(:,iclass)*prey_c)
             E_a_n = sum(self%phi(:,iclass)*prey_n)
             E_a_p = sum(self%phi(:,iclass)*prey_p)
@@ -615,10 +617,11 @@ contains
                call self%fatal_error('do_bottom','E_a_c is nan')
 #endif
 
-            ! Compute actual encounter (mmol prey s-1 g-1): availability per volume (mmol prey m-3) times mass-specific volumetric search rate (m3 g-1 s-1)
+            ! Compute actual encounter in mmol prey s-1 (mmol C in predator)-1
+            ! availability per volume (mmol prey m-3) times mass-specific volumetric search rate (m3 mmol predator-1 s-1)
             E_e = self%V(iclass)*E_a_c ! Eq M3
 
-            ! Compute ingestion rate (mmol prey s-1 g-1) - per predator biomass!
+            ! Compute ingestion rate (s-1) - mmol C of prey per mmol C in predator per time!
             f = E_e/(E_e+self%I_max(iclass))   ! Eq M5
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_f(iclass),f)
             I_c(iclass) = T_lim*self%I_max(iclass)*f ! ingestion part of M7
@@ -626,6 +629,7 @@ contains
             if (isnan(I_c(iclass))) &
                call self%fatal_error('do_bottom','ingestion is nan')
 #endif
+            ! Predator-specific ingestion of nitrogen, phosphorus, silicate (mmol prey s-1 mmol-1)
             I_n(iclass) = I_c(iclass)/E_a_c*E_a_n
             I_p(iclass) = I_c(iclass)/E_a_c*E_a_p
             I_s(iclass) = I_c(iclass)/E_a_c*E_a_s
@@ -650,7 +654,7 @@ contains
             ! Specific maintenance rate (s-1)
             maintenance(iclass) = T_lim*self%std_metab(iclass)
 
-            ! Net specific element availability (s-1 = mmol s-1 g-1 * g mmol-1)
+            ! Net specific element availability (mmol prey s-1 mmol-1)
             g_tot_c = self%alpha*I_c(iclass) - maintenance(iclass)
             g_tot_n = self%alpha*I_n(iclass)
             g_tot_p = self%alpha*I_p(iclass)

@@ -384,8 +384,8 @@ contains
 
       call self%get_parameter(ngrid, 'ngrid', '', 'grid size', default=100)
       call self%get_parameter(nsource, 'nsource', '', 'number of source pools')
-      call self%get_parameter(w_min, 'w_min', '', 'minimum weight')
-      call self%get_parameter(w_max, 'w_max', '', 'maximum weight')
+      call self%get_parameter(w_min, 'w_min', '', 'minimum mass')
+      call self%get_parameter(w_max, 'w_max', '', 'maximum mass')
 
       allocate(self%mass_grid(ngrid))
       allocate(self%scale_factors(ngrid, nsource))
@@ -415,8 +415,8 @@ contains
       do i = 1, size(self%mass_grid)
          self%scale_factors(i, :) = self%scale_factors(i, :) / (exp(self%mass_grid(i) + dlog_w/2) - exp(self%mass_grid(i) - dlog_w/2))
       end do
-      call self%register_diagnostic_variable(self%id_slope, 'slope', '-', 'slope of size spectrum')
-      call self%register_diagnostic_variable(self%id_offset, 'offset', '-', 'offset of size spectrum')
+      call self%register_diagnostic_variable(self%id_slope, 'slope', '-', 'slope of size spectrum', source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_offset, 'offset', '-', 'offset of size spectrum', source=source_do_bottom)
    end subroutine pelagic_size_spectrum_initialize
 
    subroutine pelagic_size_spectrum_do_bottom(self, _ARGUMENTS_DO_BOTTOM_)
