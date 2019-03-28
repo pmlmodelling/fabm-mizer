@@ -416,7 +416,7 @@ contains
          self%scale_factors(i, :) = self%scale_factors(i, :) / (exp(self%mass_grid(i) + dlog_w/2) - exp(self%mass_grid(i) - dlog_w/2))
       end do
       call self%register_diagnostic_variable(self%id_slope, 'slope', '-', 'slope of size spectrum', source=source_do_bottom)
-      call self%register_diagnostic_variable(self%id_offset, 'offset', '-', 'offset of size spectrum', source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_offset, 'offset', 'ln <SOURCE UNITS> m', 'offset of size spectrum', source=source_do_bottom)
    end subroutine pelagic_size_spectrum_initialize
 
    subroutine pelagic_size_spectrum_do_bottom(self, _ARGUMENTS_DO_BOTTOM_)
