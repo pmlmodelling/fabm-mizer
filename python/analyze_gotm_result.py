@@ -88,20 +88,21 @@ fig.savefig('fish_bm.png', dp=300)
 
 fig = pyplot.figure()
 ax = fig.gca()
-plankton_spectrum, = ax.loglog(w, wm_scale_factor * biomass_ctr[0, :], '-')
-fitted_plankton_spectrum, = ax.loglog((1e-7, 1e-3), (wm_scale_factor * numpy.exp(offset[0] + slope[0] * numpy.log(1e-7)), wm_scale_factor * numpy.exp(offset[0] + slope[0] * numpy.log(1e-3))), '--r')
-fish_spectrum, = ax.loglog(fish_w, wm_scale_factor * fish[:, 0], '-g')
+plankton_spectrum, = ax.loglog(w, wm_scale_factor * biomass_ctr[0, :], '-', label='plankton')
+fitted_plankton_spectrum, = ax.loglog((1e-7, 1e-3), (wm_scale_factor * numpy.exp(offset[0] + slope[0] * numpy.log(1e-7)), wm_scale_factor * numpy.exp(offset[0] + slope[0] * numpy.log(1e-3))), '--r', label='fitted plankton spectrum')
+fish_spectrum, = ax.loglog(fish_w, wm_scale_factor * fish[:, 0], '-g', label='fish')
 ax.set_xlim(10.**size_grid_bnds[0], 10.**size_grid_bnds[-1])
 startspectrum = wm_scale_factor * numpy.exp(offset + slope * numpy.log(1e-3))
 ax.set_ylim(startspectrum.min()*1e-9, wm_scale_factor * max(biomass_ctr.max(), fish.max()))
 ax.set_xlabel('wet mass (g)')
 ax.set_ylabel('wet mass density (m-2)')
+ax.legend(loc='upper right')
 ax.grid()
 
 def plot(i):
-   plankton_spectrum.set_ydata(biomass_ctr[i, :])
-   fitted_plankton_spectrum.set_ydata((numpy.exp(offset[i] + slope[i] * numpy.log(1e-7)), numpy.exp(offset[i] + slope[i] * numpy.log(1e-3))))
-   fish_spectrum.set_ydata(fish[:, i])
+   plankton_spectrum.set_ydata(wm_scale_factor * biomass_ctr[i, :])
+   fitted_plankton_spectrum.set_ydata((wm_scale_factor * numpy.exp(offset[i] + slope[i] * numpy.log(1e-7)), wm_scale_factor * numpy.exp(offset[i] + slope[i] * numpy.log(1e-3))))
+   fish_spectrum.set_ydata(wm_scale_factor * fish[:, i])
    ax.set_title(dt[i].strftime('%Y-%m-%d'))
 
 if not os.path.isdir('ani_spectrum'):
