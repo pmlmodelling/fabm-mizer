@@ -16,19 +16,25 @@ size_grid_ctr = (size_grid_bnds[1:] + size_grid_bnds[:-1]) / 2
 dw = 10.**size_grid_bnds[1:] - 10.**size_grid_bnds[:-1]
 w = 10.**size_grid_ctr
 biomass_ctr = None
+plankton_total = None
+
+wm_scale_factor = 0.12 # (from mmol to mol, from mol C to g C, from g C to g WM)
 
 def add_group(data, minw, maxw):
-   global biomass_ctr
+   global biomass_ctr, plankton_total
    log10_minw = numpy.log10(minw)
    log10_maxw = numpy.log10(maxw)
    fractions = numpy.zeros_like(size_grid_ctr)
    for i in xrange(size_grid_ctr.size):
       fractions[i] = max(0., min(size_grid_bnds[i + 1], log10_maxw) - max(size_grid_bnds[i], log10_minw))/(log10_maxw - log10_minw)
-   curbiomass = (h * data/12).sum(axis=1)[:, numpy.newaxis] * fractions[numpy.newaxis, :]
+   density_timeseries = (h * data/12).sum(axis=1)
+   spectrum_timeseries = density_timeseries[:, numpy.newaxis] * fractions[numpy.newaxis, :]
    if biomass_ctr is None:
-      biomass_ctr = curbiomass
+      biomass_ctr = spectrum_timeseries
+      plankton_total = density_timeseries
    else:
-      biomass_ctr += curbiomass
+      biomass_ctr += spectrum_timeseries
+      plankton_total += density_timeseries
 
 with netCDF4.Dataset(args.source) as nc:
    nctime = nc.variables['time']
@@ -43,6 +49,7 @@ with netCDF4.Dataset(args.source) as nc:
    add_group(nc.variables['Z6_c'][:, :, 0, 0], 4.188e-12, 4.188e-9)
    offset = nc.variables['fish_pelagic_size_spectrum_offset'][:, 0, 0]
    slope = nc.variables['fish_pelagic_size_spectrum_slope'][:, 0, 0]
+   fish_c_tot = nc.variables['fish_c_tot'][:, 0, 0]
    fish = []
    i = 1
    while True:
@@ -63,15 +70,32 @@ biomass_ctr /= dw[numpy.newaxis, :]
 fish /= fish_dw[:, numpy.newaxis]
 
 fig = pyplot.figure()
+ax = fig.add_subplot(211)
+ax.plot(dt, wm_scale_factor * (biomass_ctr * dw[numpy.newaxis, :]).sum(axis=1), '-', label='plankton')
+ax.plot(dt, wm_scale_factor * (fish * fish_dw[:, numpy.newaxis]).sum(axis=0), '-', label='fish')
+#ax.plot(dt, fish_c_tot, ':', label='fish2')
+#ax.plot(dt, wm_scale_factor * plankton_total, ':', label='plankton2')
+ax.legend()
+ax.grid(True)
+ax.set_ylabel('wet mass (g m-2)')
+ax.set_ylim(0, None)
+ax = fig.add_subplot(212)
+ax.plot(dt, (fish * fish_dw[:, numpy.newaxis]).sum(axis=0) / (biomass_ctr * dw[numpy.newaxis, :]).sum(axis=1), '-')
+ax.grid(True)
+ax.set_ylabel('fish : plankton ratio')
+ax.set_ylim(0, None)
+fig.savefig('fish_bm.png', dp=300)
+
+fig = pyplot.figure()
 ax = fig.gca()
-plankton_spectrum, = ax.loglog(w, biomass_ctr[0, :]/dw, '-')
-fitted_plankton_spectrum, = ax.loglog((1e-7, 1e-3), (numpy.exp(offset[0] + slope[0] * numpy.log(1e-7)), numpy.exp(offset[0] + slope[0] * numpy.log(1e-3))), '--r')
-fish_spectrum, = ax.loglog(fish_w, fish[:, 0], '-g')
+plankton_spectrum, = ax.loglog(w, wm_scale_factor * biomass_ctr[0, :], '-')
+fitted_plankton_spectrum, = ax.loglog((1e-7, 1e-3), (wm_scale_factor * numpy.exp(offset[0] + slope[0] * numpy.log(1e-7)), wm_scale_factor * numpy.exp(offset[0] + slope[0] * numpy.log(1e-3))), '--r')
+fish_spectrum, = ax.loglog(fish_w, wm_scale_factor * fish[:, 0], '-g')
 ax.set_xlim(10.**size_grid_bnds[0], 10.**size_grid_bnds[-1])
-startspectrum = numpy.exp(offset + slope * numpy.log(1e-3))
-ax.set_ylim(startspectrum.min()*1e-9, max(biomass_ctr.max(), fish.max()))
+startspectrum = wm_scale_factor * numpy.exp(offset + slope * numpy.log(1e-3))
+ax.set_ylim(startspectrum.min()*1e-9, wm_scale_factor * max(biomass_ctr.max(), fish.max()))
 ax.set_xlabel('wet mass (g)')
-ax.set_ylabel('mass density (g/g)')
+ax.set_ylabel('wet mass density (m-2)')
 ax.grid()
 
 def plot(i):
