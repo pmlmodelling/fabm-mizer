@@ -48,6 +48,7 @@ instances:
        z_spre: 0.2
        ks: 0.
        SRR: 3
+       R_relax: 0.2
        h: 1e9
        fishing_type: 3
        w_minF: 10 # Blanchard et al 2009 J Anim Ecol: 10 g

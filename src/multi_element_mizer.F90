@@ -89,6 +89,7 @@ module mizer_multi_element_population
       integer  :: SRR         ! type of stock-recruitment relationship (SRR)
       real(rk) :: recruitment ! constant recruitment flux (SSR=0)
       real(rk) :: R_max       ! maximum recruitment flux (SSR=2)
+      real(rk) :: R_relax     ! rate of relaxation towards expected egg density - derived from prey spectrum (SSR=3)
       real(rk) :: qnc         ! nitrogen:carbon ratio (mol:mol, constant)
       real(rk) :: qpc         ! phosphorus:carbon ratio (mol:mol, constant)
       real(rk) :: alpha_eg    ! fraction of food that is egested
@@ -198,6 +199,8 @@ contains
       call self%get_parameter(self%recruitment, 'recruitment', '# yr-1', 'constant recruitment flux', minimum=0.0_rk, default=kappa*self%w_min**(-lambda)*sec_per_year, scale_factor=1._rk/sec_per_year)
    case (2)
       call self%get_parameter(self%R_max, 'R_max','# yr-1','maximum recruitment flux', minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+   case (3)
+      call self%get_parameter(self%R_relax, 'R_relax', 'd-1', 'relaxation towards expected egg density', minimum=0.0_rk, default=1.0_rk, scale_factor=1._rk/86400)
    end select
 
    call self%get_parameter(cannibalism,'cannibalism','',         'whether to enable intraspecific predation', default=.true.)
@@ -471,7 +474,7 @@ contains
    ! Register diagnostic for total offspring production across population.
    if (self%SRR == 1 .or. self%SRR == 2) then
       call self%register_diagnostic_variable(self%id_total_reproduction,'total_reproduction','g m-2 d-1','total reproduction',source=source_do_bottom)
-      call self%register_diagnostic_variable(self%id_R_p,'R_p','# d-1','density-independent recruitment',source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_R_p,'R_p','# m-2 d-1','density-independent recruitment',source=source_do_bottom)
    elseif (self%SRR == 3) then
       ! Infer biomass of lowest size class by extending spectrum of (small) prey
       call self%register_dependency(self%id_offset, 'prey_spectrum_offset', '-', 'offset of pelagic prey spectrum')
@@ -479,7 +482,7 @@ contains
       call self%request_coupling(self%id_offset, './pelagic_size_spectrum/offset')
       call self%request_coupling(self%id_slope, './pelagic_size_spectrum/slope')
    end if
-   call self%register_diagnostic_variable(self%id_R,'R','# d-1','recruitment',source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_R,'R','# m-2 d-1','recruitment',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_tot, 'c_tot', 'g m-2', 'total biomass', source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_small, 'c_small', 'g m-2', 'small fish', source=source_do_bottom)
 
@@ -567,7 +570,7 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey,istate
-      real(rk) :: c_small, slope, offset, endpoint, eggs
+      real(rk) :: c_small, slope, offset, endpoint, expected_eggs
       real(rk) :: E_e,E_a_c,E_a_n,E_a_p,E_a_s,f,total_reproduction,T_lim,temp,T_w_int,w_int,g_tot,R,R_p,nflux(0:self%nclass),prey_state,g_tot_c,g_tot_n,g_tot_p
       real(rk),dimension(self%nprey)  :: prey_c,prey_n,prey_p,prey_s,prey_loss
       real(rk),dimension(self%nclass) :: Nw,I_c,I_n,I_p,I_s,maintenance,g,mu,reproduction
@@ -697,8 +700,8 @@ contains
             _GET_HORIZONTAL_(self%id_offset, offset)
             _GET_HORIZONTAL_(self%id_slope, slope)
             endpoint = offset + slope * log(self%w_min)
-            eggs = exp(endpoint) * self%delta_w(1)
-            R = (eggs - Nw(1))/86400/(self%w_min/g_per_mmol_carbon)*24
+            expected_eggs = exp(endpoint) * self%delta_w(1)
+            R = max(expected_eggs - Nw(1), 0._rk)/(self%w_min/g_per_mmol_carbon) * self%R_relax
          end if
 
          ! Use recruitment as number of incoming individuals for the first size class.
