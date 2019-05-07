@@ -50,8 +50,8 @@ module mizer_size_structured_population
 ! !PUBLIC DERIVED TYPES:
    type,extends(type_base_model),public :: type_size_structured_population
       ! Variable identifiers
-      type (type_bottom_state_variable_id),         allocatable :: id_Nw(:)              ! Total weight per size class (sum over all individuals)
-      type (type_bottom_state_variable_id),         allocatable :: id_Nw_prey(:)         ! Total weight per prey (sum over all individuals)
+      type (type_bottom_state_variable_id),         allocatable :: id_Nw(:)              ! Total mass per size class (sum over all individuals)
+      type (type_bottom_state_variable_id),         allocatable :: id_Nw_prey(:)         ! Total mass per prey (sum over all individuals)
       type (type_bottom_state_variable_id)                      :: id_waste              ! State variable that will serve as sink for all waste
       type (type_bottom_state_variable_id)                      :: id_landings           ! State variable that will serve as sink for all landed biomass
       type (type_horizontal_diagnostic_variable_id)             :: id_total_reproduction ! Total reproduction
@@ -73,7 +73,7 @@ module mizer_size_structured_population
       real(rk),allocatable :: delta_w(:)  ! mass difference between consecutive size classes
 
       ! Size-class-independent parameters
-      real(rk) :: w_min       ! egg weight
+      real(rk) :: w_min       ! egg mass
       real(rk) :: alpha       ! assimilation efficiency
       real(rk) :: beta        ! preferred predator:prey mass ratio
       real(rk) :: sigma       ! s.d. of lognormal prey size selection function
@@ -151,21 +151,21 @@ contains
    call self%get_parameter(self%nprey, 'nprey',  '',     'number of prey')
    call self%get_parameter(self%alpha, 'alpha',  '-',    'assimilation efficiency',            default=0.6_rk,   minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(self%erepro,'erepro', '-',    'reproductive efficiency',            default=1.0_rk,   minimum=0.0_rk, maximum=1.0_rk)
-   call self%get_parameter(self%w_min, 'w_min',  'g',    'egg weight',                         default=0.001_rk, minimum=0.0_rk)
+   call self%get_parameter(self%w_min, 'w_min',  'g',    'egg mass',                           default=0.001_rk, minimum=0.0_rk)
    call self%get_parameter(n,          'n',      '-',    'exponent of max. consumption',       default=2.0_rk/3.0_rk)
    call self%get_parameter(q,          'q',      '-',    'exponent of search volume',          default=0.8_rk)
    call self%get_parameter(p,          'p',      '-',    'exponent of standard metabolism',    default=0.7_rk)
    call self%get_parameter(z0_type,    'z0_type','',     'type of background mortality (0: constant, 1: allometric function of size)', default=0)
    call self%get_parameter(z0pre,      'z0pre',  'yr-1', 'pre-factor for background mortality (= mortality at 1 g)',default=0.6_rk,   minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    call self%get_parameter(z0exp,      'z0exp',  '-',    'exponent of background mortality',   default=n-1)
-   call self%get_parameter(w_s,        'w_s',    'g',    'start weight for senescence mortality',default=0._rk, minimum=0.0_rk)
+   call self%get_parameter(w_s,        'w_s',    'g',    'start mass for senescence mortality',default=0._rk, minimum=0.0_rk)
    call self%get_parameter(z_s,        'z_s',    '-',    'exponent for senescence mortality',default=0.3_rk, minimum=0.0_rk)
    call self%get_parameter(z_spre,     'z_spre', 'yr-1', 'pre-factor for senescence mortality (= mortality at w_s g)',default=0.2_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
-   call self%get_parameter(w_mat,      'w_mat',  'g',    'maturation weight', default=0.0_rk, minimum=0.0_rk)
-   call self%get_parameter(w_inf,      'w_inf',  'g',    'asymptotic weight', default=1e3_rk, minimum=0.0_rk)
+   call self%get_parameter(w_mat,      'w_mat',  'g',    'maturation mass', default=0.0_rk, minimum=0.0_rk)
+   call self%get_parameter(w_inf,      'w_inf',  'g',    'asymptotic mass', default=1e3_rk, minimum=0.0_rk)
    call self%get_parameter(self%beta,  'beta',   '-',    'preferred predator:prey mass ratio', default=100.0_rk, minimum=0.0_rk)
-   call self%get_parameter(self%sigma, 'sigma',  '-',    'width of prey size preference (sd in ln weight units)', default=1.0_rk, minimum=0.0_rk)
-   call self%get_parameter(self%xi,    'xi',     '-',    'fraction of weight consisting of lipid reserve', default=0.1_rk, minimum=0.0_rk, maximum=1.0_rk)
+   call self%get_parameter(self%sigma, 'sigma',  '-',    'width of prey size preference (sd in ln mass units)', default=1.0_rk, minimum=0.0_rk)
+   call self%get_parameter(self%xi,    'xi',     '-',    'fraction of mass consisting of lipid reserve', default=0.1_rk, minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(k_vb,       'k_vb',   'yr-1', 'von Bertalanffy growth rate', minimum=0.0_rk, default=0.0_rk, scale_factor=1._rk/sec_per_year)
    call self%get_parameter(lambda,     'lambda', '-',        'exponent of background resource spectrum', default=2+q-n)
    call self%get_parameter(kappa,      'kappa',  'g^(lambda-1)','carrying capacity of background resource spectrum', default=1e11_rk, minimum=0.0_rk)
@@ -241,7 +241,7 @@ contains
    ! Fishing mortality
    self%F = 0.0_rk
    call self%get_parameter(fishing_type,'fishing_type', '', 'fishing regime (0: none, 1: constant/knife-edge, 2: logistic)',default=0, minimum=0, maximum=3)
-   if (fishing_type > 0) call self%get_parameter(w_minF, 'w_minF', 'g', 'minimum weight for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
+   if (fishing_type > 0) call self%get_parameter(w_minF, 'w_minF', 'g', 'minimum mass for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
    select case (fishing_type)
    case (1)
       ! constant
@@ -274,29 +274,29 @@ contains
    end if
    if (.false.) then
       write (*,*) 'Specific search volume (yr-1):'
-      write (*,*) '  @ weight = 1:',gamma*sec_per_year,'(gamma)'
-      write (*,*) '  @ minimum weight:',self%V(1)*sec_per_year
-      write (*,*) '  @ maximum weight:',self%V(self%nclass)*sec_per_year
+      write (*,*) '  @ mass = 1:',gamma*sec_per_year,'(gamma)'
+      write (*,*) '  @ minimum mass:',self%V(1)*sec_per_year
+      write (*,*) '  @ maximum mass:',self%V(self%nclass)*sec_per_year
       write (*,*) 'Specific ingestion rate (yr-1)'
-      write (*,*) '  @ weight = 1:',h*sec_per_year,'(h)'
-      write (*,*) '  @ minimum weight:',self%I_max(1)*sec_per_year
-      write (*,*) '  @ maximum weight:',self%I_max(self%nclass)*sec_per_year
+      write (*,*) '  @ mass = 1:',h*sec_per_year,'(h)'
+      write (*,*) '  @ minimum mass:',self%I_max(1)*sec_per_year
+      write (*,*) '  @ maximum mass:',self%I_max(self%nclass)*sec_per_year
       write (*,*) 'Specific metabolism (yr-1):'
-      write (*,*) '  @ weight = 1:',self%std_metab(1)*sec_per_year,'(ks)'
-      write (*,*) '  @ minimum weight:',self%std_metab(1)*sec_per_year
-      write (*,*) '  @ maximum weight:',self%std_metab(self%nclass)*sec_per_year
+      write (*,*) '  @ mass = 1:',self%std_metab(1)*sec_per_year,'(ks)'
+      write (*,*) '  @ minimum mass:',self%std_metab(1)*sec_per_year
+      write (*,*) '  @ maximum mass:',self%std_metab(self%nclass)*sec_per_year
       write (*,*) 'Background mortality (yr-1):'
       select case (z0_type)
       case (0)
-         write (*,*) '  @ weight = 1:',z0*sec_per_year,'(z0)'
+         write (*,*) '  @ mass = 1:',z0*sec_per_year,'(z0)'
       case (1)
-         write (*,*) '  @ weight = 1:',z0pre*sec_per_year,'(z0pre)'
+         write (*,*) '  @ mass = 1:',z0pre*sec_per_year,'(z0pre)'
       end select
-      write (*,*) '  @ minimum weight:',self%mu_b(1)*sec_per_year
-      write (*,*) '  @ maximum weight:',self%mu_b(self%nclass)*sec_per_year
+      write (*,*) '  @ minimum mass:',self%mu_b(1)*sec_per_year
+      write (*,*) '  @ maximum mass:',self%mu_b(self%nclass)*sec_per_year
       write (*,*) 'Senescence mortality (yr-1):'
-      write (*,*) '  @ minimum weight:',self%mu_s(1)*sec_per_year
-      write (*,*) '  @ maximum weight:',self%mu_s(self%nclass)*sec_per_year
+      write (*,*) '  @ minimum mass:',self%mu_s(1)*sec_per_year
+      write (*,*) '  @ maximum mass:',self%mu_s(self%nclass)*sec_per_year
       write (*,*) 'Fishing mortality at minimum size:',self%F(1)*sec_per_year,'yr-1'
       write (*,*) 'Fishing mortality at maximum size:',self%F(self%nclass)*sec_per_year,'yr-1'
    end if
@@ -400,7 +400,7 @@ contains
       real(rk)          :: w_p
 
       ! Coupling with prey has completed.
-      ! Now we can query all prey for their weight per individual. From that we precompute predator-prey preferences.
+      ! Now we can query all prey for their wet mass per individual. From that we precompute predator-prey preferences.
 
       do iprey=1,self%nprey
          ! First retrieve individual mass of prey (throw fatal error if not available)
