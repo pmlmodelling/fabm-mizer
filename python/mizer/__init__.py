@@ -188,9 +188,11 @@ class Mizer(object):
         self.initial_state = numpy.copy(self.fabm_model.state)
         self.recruitment_from_prey = recruitment_from_prey
 
-    def run(self, t, verbose=False, spinup=0, save_spinup=False, initial_state=None, integration_method=EULER, dt=1/24.):
+    def run(self, t, verbose=False, spinup=0, save_spinup=False, initial_state=None, integration_method=EULER, dt=1/24., diagnostics=()):
         if initial_state is None:
             initial_state = self.initial_state
+
+        diagvar = tuple([self.fabm_model.findDiagnosticVariable(name) for name in diagnostics])
 
         # Shortcuts to objects used during time integration
         state = self.fabm_model.state
@@ -245,11 +247,13 @@ class Mizer(object):
             #y_spinup = self.fabm_model.integrate(state_copy, t_spinup, dt=dt)
             ioutput = 0
             y_spinup = numpy.empty((t_spinup.size, state.size))
+            diagval_spinup = numpy.empty((t_spinup.size, len(diagvar)))
             ts_spinup = t_spinup[0] + numpy.arange(1 + int(round((t_spinup[-1] - t_spinup[0]) / dt))) * dt
             for current_t in ts_spinup:
                 checkState(repair=True)
                 if current_t >= t_spinup[ioutput]:
                     y_spinup[ioutput, :] = state
+                    diagval_spinup[ioutput, :] = [d.value for d in diagvar]
                     ioutput += 1
                 state += getRates()*multiplier
             state[:] = y_spinup[-1, :]
@@ -276,6 +280,7 @@ class Mizer(object):
         # Time integration
         ioutput = 0
         y = numpy.empty((t.size, state.size))
+        diagval = numpy.empty((t.size, len(diagvar)))
         for itime, current_t in enumerate(ts):
             state[prey_indices] = preys[itime, :]
             if temperature_provider is not None:
@@ -287,6 +292,7 @@ class Mizer(object):
             checkState(repair=True)
             if current_t >= t[ioutput]:
                 y[ioutput, :] = state
+                diagval[ioutput, :] = [d.value for d in diagvar]
                 ioutput += 1
             state += getRates()*multiplier
         if pyfabm.hasError():
@@ -305,10 +311,11 @@ class Mizer(object):
             # Prepend spinup to results
             t = numpy.hstack((t_spinup[:-1], t))
             y = numpy.vstack((y_spinup[:-1, :], y))
+            diagval = numpy.vstack((diagval_spinup[:-1, :], diagval))
 
         if verbose:
             print('Done.')
-        return MizerResult(self, t, y, temperature, depth)
+        return MizerResult(self, t, y, temperature, depth, diagnostics=dict([(name, diagval[:, i]) for i, name in enumerate(diagnostics)]))
 
     def get_msy(self, t, spinup=50, initial_state=None):
         if initial_state is None:
@@ -348,7 +355,7 @@ class Mizer(object):
             return y[-1, ilandings] - y[-3650, ilandings]
 
 class MizerResult(object):
-    def __init__(self, model, t, y, temperature, depth):
+    def __init__(self, model, t, y, temperature, depth, diagnostics={}):
         self.model = model
         self.t = t
         self.y = y
@@ -357,6 +364,7 @@ class MizerResult(object):
         self.spectrum = y[:, self.model.bin_indices]
         self.biomass_density = self.spectrum/self.model.bin_widths
         self.abundance_density = self.spectrum/self.model.bin_widths/self.model.bin_masses
+        self.diagnostics = diagnostics
 
     def plot_spectrum(self, itime=-1, fig=None, normalization=0, global_range=False):
         if fig is None:
