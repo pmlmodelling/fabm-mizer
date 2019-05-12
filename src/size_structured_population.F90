@@ -60,6 +60,7 @@ module mizer_size_structured_population
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_reproduction(:)    ! Reproduction per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_f(:)               ! Functional response per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_g(:)               ! Specific growth rate per size class
+      type (type_horizontal_diagnostic_variable_id),allocatable :: id_loss(:)            ! Loss rate per prey
       type (type_dependency_id)                                 :: id_T                  ! Temperature
       type (type_horizontal_dependency_id)                      :: id_biomass_to_prey    ! Biomass-to-prey scale factor
 
@@ -305,9 +306,11 @@ contains
    ! If the population is cannibalistic, autoamtically add all our size classes to the set of prey types.
    if (cannibalism) self%nprey = self%nprey + self%nclass
    allocate(self%id_Nw_prey(self%nprey))
+   allocate(self%id_loss(self%nprey))
    do iprey=1,self%nprey
       write (strindex,'(i0)') iprey
       call self%register_bottom_state_dependency(self%id_Nw_prey(iprey),'Nw_prey'//trim(strindex),'g PV-1','biomass of prey '//trim(strindex))
+      call self%register_diagnostic_variable(self%id_loss(iprey), 'loss'//trim(strindex), 'd-1', 'specific loss of prey '//trim(strindex), source=source_do_bottom)
    end do
 
    ! Allocate size-class-specific identifiers for abundance state variable and diagnostics.
@@ -545,6 +548,7 @@ contains
          ! Here we convert specific prey losses to absolute prey losses by multiplying with prey biomass.
          do iprey=1,self%nprey
             _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey),-prey_loss(iprey)*Nw_prey(iprey))
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_loss(iprey), prey_loss(iprey)*86400)
          end do
 
          ! Transfer size-class-specific source terms and diagnostics to FABM
