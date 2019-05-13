@@ -188,11 +188,13 @@ class Mizer(object):
         self.initial_state = numpy.copy(self.fabm_model.state)
         self.recruitment_from_prey = recruitment_from_prey
 
-    def run(self, t, verbose=False, spinup=0, save_spinup=False, initial_state=None, integration_method=EULER, dt=1/24., diagnostics=()):
+    def run(self, t, verbose=False, spinup=0, save_spinup=False, initial_state=None, integration_method=EULER, dt=1/24., diagnostics=(), save_loss_rates=False):
         if initial_state is None:
             initial_state = self.initial_state
 
-        diagvar = tuple([self.fabm_model.findDiagnosticVariable(name) for name in diagnostics])
+        diagvar = frozenset([self.fabm_model.findDiagnosticVariable(name) for name in diagnostics])
+        if save_loss_rates:
+            diagvar = diagvar | frozenset(['fish/loss%i' % (self.prey_indices.size + i + 1) for i in range(self.bin_masses)])
 
         # Shortcuts to objects used during time integration
         state = self.fabm_model.state
@@ -365,6 +367,10 @@ class MizerResult(object):
         self.biomass_density = self.spectrum/self.model.bin_widths
         self.abundance_density = self.spectrum/self.model.bin_widths/self.model.bin_masses
         self.diagnostics = diagnostics
+
+    def get_loss_rates(self):
+        nprey = self.model.prey_indices.size
+        return numpy.stack([self.diagnostics['fish/loss%i' % (nprey + i + 1)] for i in range(self.spectrum.shape[1])], axis=1)
 
     def plot_spectrum(self, itime=-1, fig=None, normalization=0, global_range=False):
         if fig is None:
