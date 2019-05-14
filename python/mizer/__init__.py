@@ -193,7 +193,7 @@ class Mizer(object):
             initial_state = self.initial_state
 
         if save_loss_rates:
-            diagnostics = diagnostics | tuple(['fish/loss%i' % (self.prey_indices.size + i + 1) for i in range(self.bin_masses.size)])
+            diagnostics = diagnostics + tuple(['fish/loss%i' % (self.prey_indices.size + i + 1) for i in range(self.bin_masses.size)])
         diagvar = tuple([self.fabm_model.findDiagnosticVariable(name) for name in diagnostics])
 
         # Shortcuts to objects used during time integration
