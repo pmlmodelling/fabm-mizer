@@ -194,7 +194,7 @@ class Mizer(object):
 
         diagvar = frozenset([self.fabm_model.findDiagnosticVariable(name) for name in diagnostics])
         if save_loss_rates:
-            diagvar = diagvar | frozenset(['fish/loss%i' % (self.prey_indices.size + i + 1) for i in range(self.bin_masses)])
+            diagvar = diagvar | frozenset(['fish/loss%i' % (self.prey_indices.size + i + 1) for i in range(self.bin_masses.size)])
 
         # Shortcuts to objects used during time integration
         state = self.fabm_model.state
