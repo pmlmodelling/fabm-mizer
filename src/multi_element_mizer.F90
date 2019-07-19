@@ -162,6 +162,7 @@ contains
    class (type_depth_integral),       pointer :: depth_integral
    class (type_product),              pointer :: product
    class (type_pelagic_size_spectrum),pointer :: pelagic_size_spectrum
+   logical, parameter :: report_statistics = .false.
 !EOP
 !-----------------------------------------------------------------------
 !BOC
@@ -315,33 +316,33 @@ contains
    else
       self%psi(:) = (self%w/w_inf)**(1-n) / (1+(self%w/w_mat)**(-10)) ! allocation to reproduction [-]; Eqs M13 and M14 combined
    end if
-   if (.false.) then
-   write (*,*) 'Specific search volume (yr-1):'
-   write (*,*) '  @ mass = 1:',gamma*sec_per_year,'(gamma)'
-   write (*,*) '  @ minimum mass:',self%V(1)*sec_per_year
-   write (*,*) '  @ maximum mass:',self%V(self%nclass)*sec_per_year
-   write (*,*) 'Specific ingestion rate (yr-1)'
-   write (*,*) '  @ mass = 1:',h*sec_per_year,'(h)'
-   write (*,*) '  @ minimum mass:',self%I_max(1)*sec_per_year
-   write (*,*) '  @ maximum mass:',self%I_max(self%nclass)*sec_per_year
-   write (*,*) 'Specific metabolism (yr-1):'
-   write (*,*) '  @ mass = 1:',self%std_metab(1)*sec_per_year,'(ks)'
-   write (*,*) '  @ minimum mass:',self%std_metab(1)*sec_per_year
-   write (*,*) '  @ maximum mass:',self%std_metab(self%nclass)*sec_per_year
-   write (*,*) 'Background mortality (yr-1):'
-   select case (z0_type)
-   case (0)
-   write (*,*) '  @ mass = 1:',z0*sec_per_year,'(z0)'
-   case (1)
-      write (*,*) '  @ mass = 1:',z0pre*sec_per_year,'(z0pre)'
-   end select
-   write (*,*) '  @ minimum mass:',self%mu_b(1)*sec_per_year
-   write (*,*) '  @ maximum mass:',self%mu_b(self%nclass)*sec_per_year
-   write (*,*) 'Senescence mortality (yr-1):'
-   write (*,*) '  @ minimum mass:',self%mu_s(1)*sec_per_year
-   write (*,*) '  @ maximum mass:',self%mu_s(self%nclass)*sec_per_year
-   write (*,*) 'Fishing mortality at minimum size:',self%F(1)*sec_per_year,'yr-1'
-   write (*,*) 'Fishing mortality at maximum size:',self%F(self%nclass)*sec_per_year,'yr-1'
+   if (report_statistics) then
+      write (*,*) 'Specific search volume (yr-1):'
+      write (*,*) '  @ mass = 1:',gamma*sec_per_year,'(gamma)'
+      write (*,*) '  @ minimum mass:',self%V(1)*sec_per_year
+      write (*,*) '  @ maximum mass:',self%V(self%nclass)*sec_per_year
+      write (*,*) 'Specific ingestion rate (yr-1)'
+      write (*,*) '  @ mass = 1:',h*sec_per_year,'(h)'
+      write (*,*) '  @ minimum mass:',self%I_max(1)*sec_per_year
+      write (*,*) '  @ maximum mass:',self%I_max(self%nclass)*sec_per_year
+      write (*,*) 'Specific metabolism (yr-1):'
+      write (*,*) '  @ mass = 1:',self%std_metab(1)*sec_per_year,'(ks)'
+      write (*,*) '  @ minimum mass:',self%std_metab(1)*sec_per_year
+      write (*,*) '  @ maximum mass:',self%std_metab(self%nclass)*sec_per_year
+      write (*,*) 'Background mortality (yr-1):'
+      select case (z0_type)
+      case (0)
+      write (*,*) '  @ mass = 1:',z0*sec_per_year,'(z0)'
+      case (1)
+         write (*,*) '  @ mass = 1:',z0pre*sec_per_year,'(z0pre)'
+      end select
+      write (*,*) '  @ minimum mass:',self%mu_b(1)*sec_per_year
+      write (*,*) '  @ maximum mass:',self%mu_b(self%nclass)*sec_per_year
+      write (*,*) 'Senescence mortality (yr-1):'
+      write (*,*) '  @ minimum mass:',self%mu_s(1)*sec_per_year
+      write (*,*) '  @ maximum mass:',self%mu_s(self%nclass)*sec_per_year
+      write (*,*) 'Fishing mortality at minimum size:',self%F(1)*sec_per_year,'yr-1'
+      write (*,*) 'Fishing mortality at maximum size:',self%F(self%nclass)*sec_per_year,'yr-1'
    end if
 
    allocate(pelagic_size_spectrum)
@@ -538,18 +539,24 @@ contains
          w_p_min = self%id_prey_c(iprey)%link%target%properties%get_real('min_particle_mass', -1._rk)
          w_p_max = self%id_prey_c(iprey)%link%target%properties%get_real('max_particle_mass', -1._rk)
          if (w_p_min > 0 .and. w_p_max > 0) then
-            ! Create log-spaced gid for prey size range
+            ! A size range (minimum wet mass - maximum wet mass) for this prey is given.
+            ! We assume that within this range, biomass is uniformly distributed in log wet mass - log total biomass space (= a Sheldon size spectrum)
+            ! The effective preference is computed by averaging the (Gaussian) preference curve over the relevant interval.
+            ! That is done below by discretizing the wet mass interval.
+
+            ! Create log-spaced grid for prey size range
             do i = 1, n
-               log_w_ps(i) = log(w_p_min) + real(i - 1, rk) * (log(w_p_max) - log(w_p_min)) / real(n - 1, rk)
+               log_w_ps(i) = log(w_p_min) + (i - 0.5_rk) * (log(w_p_max) - log(w_p_min)) / n
             end do
 
             ! Compute size-class-specific preference for current prey; Eq 4 in Hartvig et al. 2011 JTB, but note sigma typo confirmed by KH Andersen
             ! This is a log-normal distribution of prey mass, scaled such that at optimum prey mass (=predator mass/beta), the preference equals 1.
             ! sigma is the standard deviation in ln mass units.
             do iclass=1, self%nclass
-               self%phi(iprey, iclass) = sum(exp(-(log_w_ps - self%logw(iclass) + log(self%beta))**2 / self%sigma**2 / 2))/n
+               self%phi(iprey, iclass) = sum(exp(-(log_w_ps - self%logw(iclass) + log(self%beta))**2 / self%sigma**2 / 2)) / n
             end do
          elseif (w_p > 0) then
+            ! A single size (wet mass) for this prey is given.
             ! Compute size-class-specific preference for current prey; Eq 4 in Hartvig et al. 2011 JTB, but note sigma typo confirmed by KH Andersen
             ! This is a log-normal distribution of prey mass, scaled such that at optimum prey mass (=predator mass/beta), the preference equals 1.
             ! sigma is the standard deviation in ln mass units.
@@ -558,7 +565,7 @@ contains
             end do
          else
             write (strindex, '(i0)') iprey
-            call self%fatal_error('after_coupling', 'prey '//trim(strindex)//' does not have attribute "particle_mass" set.')
+            call self%fatal_error('after_coupling', 'prey '//trim(strindex)//' does not have attribute "particle_mass" or the combination "min_particle_mass", "max_particle_mass".')
          end if
       end do
       if (any(self%phi < 0)) call self%fatal_error('after_coupling', 'one or more entries of phi are < 0')
