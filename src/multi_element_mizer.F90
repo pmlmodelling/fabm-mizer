@@ -197,9 +197,9 @@ contains
    call self%get_parameter(self%SRR,   'SRR',    '',     'stock-recruitment relationship (0: constant recruitment, 1: density-independent recruitment, 2: Beverton-Holt)')
    select case (self%SRR)
    case (0)
-      call self%get_parameter(self%recruitment, 'recruitment', '# yr-1', 'constant recruitment flux', minimum=0.0_rk, default=kappa*self%w_min**(-lambda)*sec_per_year, scale_factor=1._rk/sec_per_year)
+      call self%get_parameter(self%recruitment, 'recruitment', '# m-2 yr-1', 'constant recruitment flux', minimum=0.0_rk, default=kappa*self%w_min**(-lambda)*sec_per_year, scale_factor=1._rk/sec_per_year)
    case (2)
-      call self%get_parameter(self%R_max, 'R_max','# yr-1','maximum recruitment flux', minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+      call self%get_parameter(self%R_max, 'R_max','# m-2 yr-1','maximum recruitment flux', minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    case (3)
       call self%get_parameter(self%R_relax, 'R_relax', 'd-1', 'relaxation towards expected egg density', minimum=0.0_rk, default=1.0_rk, scale_factor=1._rk/86400)
    end select
@@ -474,7 +474,7 @@ contains
 
    ! Register diagnostic for total offspring production across population.
    if (self%SRR == 1 .or. self%SRR == 2) then
-      call self%register_diagnostic_variable(self%id_total_reproduction,'total_reproduction','g m-2 d-1','total reproduction',source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_total_reproduction,'total_reproduction','mmol C m-2 d-1','total reproduction',source=source_do_bottom)
       call self%register_diagnostic_variable(self%id_R_p,'R_p','# m-2 d-1','density-independent recruitment',source=source_do_bottom)
    elseif (self%SRR == 3) then
       ! Infer biomass of lowest size class by extending spectrum of (small) prey
@@ -680,18 +680,18 @@ contains
             ! Individual growth (s-1)
             g(iclass) = (1-self%psi(iclass))*g_tot ! Eq M7
 
-            ! Mass flux towards reproduction (g s-1) - sum over all individuals in this size class
+            ! Mass flux towards reproduction (mmol C m-2 s-1) - sum over all individuals in this size class
             reproduction(iclass) = self%psi(iclass)*g_tot*Nw(iclass)
          end do
 
          ! Compute number of individuals moving from each size class to the next (units: # s-1)
          nflux(1:self%nclass) = Nw*g/(self%delta_w/g_per_mmol_carbon)
 
-         ! Sum reproductive output of entire population in g s-1 (Eq 10 of Hartvig et al. 2011 JTB)
+         ! Sum reproductive output of entire population in # m-2 s-1 (Eq 10 of Hartvig et al. 2011 JTB)
          ! Note: division by 2 is the result of the fact that reproductive output applies to females only,
          ! which are assumed to be 50% of the population.
          total_reproduction = sum(reproduction)
-         R_p = self%erepro/2*total_reproduction/self%w_min
+         R_p = self%erepro/2 * total_reproduction / (self%w_min/g_per_mmol_carbon)
 
          ! Use stock-recruitment relationship to translate density-independent recruitment into actual recruitment (units: # s-1)
          if (self%SRR==0) then
