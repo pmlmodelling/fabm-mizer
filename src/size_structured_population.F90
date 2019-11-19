@@ -25,30 +25,31 @@ module mizer_size_structured_population
 !
 ! !USES:
    use fabm_types
+   use fabm_builtin_models, only: copy_horizontal_fluxes
 
    implicit none
 
 !  default: all is private.
    private
 
-   type,extends(type_base_model),public :: type_scale_state
-      type (type_horizontal_dependency_id),         allocatable :: id_state(:)
-      type (type_horizontal_dependency_id)                      :: id_scale_factor
-      type (type_horizontal_diagnostic_variable_id),allocatable :: id_scaled_state(:)
+   type, extends(type_base_model), public :: type_map_density_to_concentration
+      type (type_horizontal_dependency_id),          allocatable :: id_density(:)
+      type (type_horizontal_dependency_id)                       :: id_depth
+      type (type_horizontal_diagnostic_variable_id), allocatable :: id_concentration(:)
    contains
-      procedure :: do_bottom => scale_state_do_bottom
-   end type type_scale_state
+      procedure :: do_bottom => map_density_to_concentration_do_bottom
+   end type
 
-   type,extends(type_base_model),public :: type_scale_rate
-      type (type_horizontal_dependency_id),allocatable :: id_rate(:)
-      type (type_horizontal_dependency_id)             :: id_inv_scale_factor
-      type (type_bottom_state_variable_id),allocatable :: id_state(:)
+   type, extends(type_base_model), public :: type_apply_bottom_flux_to_concentration
+      type (type_horizontal_dependency_id), allocatable :: id_bottom_flux(:)
+      type (type_horizontal_dependency_id)              :: id_depth
+      type (type_bottom_state_variable_id), allocatable :: id_concentration(:)
    contains
-      procedure :: do_bottom => scale_rate_do_bottom
-   end type type_scale_rate
+      procedure :: do_bottom => apply_bottom_flux_to_concentration_do_bottom
+   end type
 !
 ! !PUBLIC DERIVED TYPES:
-   type,extends(type_base_model),public :: type_size_structured_population
+   type, extends(type_base_model), public :: type_size_structured_population
       ! Variable identifiers
       type (type_bottom_state_variable_id),         allocatable :: id_Nw(:)              ! Total mass per size class (sum over all individuals)
       type (type_bottom_state_variable_id),         allocatable :: id_Nw_prey(:)         ! Total mass per prey (sum over all individuals)
@@ -62,7 +63,7 @@ module mizer_size_structured_population
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_g(:)               ! Specific growth rate per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_loss(:)            ! Loss rate per prey
       type (type_dependency_id)                                 :: id_T                  ! Temperature
-      type (type_horizontal_dependency_id)                      :: id_biomass_to_prey    ! Biomass-to-prey scale factor
+      type (type_horizontal_dependency_id)                      :: id_depth              ! Predator-prey interaction depth
 
       ! Number of size classes and prey
       integer :: nclass
@@ -140,8 +141,9 @@ contains
    character(len=10)  :: strindex
    real(rk),parameter :: pi = 4*atan(1.0_rk)
    real(rk),parameter :: sec_per_year = 86400*365.2425_rk
-   class(type_scale_state), pointer :: scale_state
-   class(type_scale_rate),  pointer :: scale_rate
+   class(type_map_density_to_concentration),       pointer :: scale_state
+   class(type_apply_bottom_flux_to_concentration), pointer :: scale_rate
+   logical, parameter :: report_statistics = .false.
 !EOP
 !-----------------------------------------------------------------------
 !BOC
@@ -174,9 +176,9 @@ contains
    call self%get_parameter(self%SRR,   'SRR',    '',     'stock-recruitment relationship (0: constant recruitment, 1: density-independent recruitment, 2: Beverton-Holt)')
    select case (self%SRR)
    case (0)
-      call self%get_parameter(self%recruitment, 'recruitment', '# yr-1', 'constant recruitment flux', minimum=0.0_rk, default=kappa*self%w_min**(-lambda)*sec_per_year, scale_factor=1._rk/sec_per_year)
+      call self%get_parameter(self%recruitment, 'recruitment', '# m-2 yr-1', 'constant recruitment flux', minimum=0.0_rk, default=kappa*self%w_min**(-lambda)*sec_per_year, scale_factor=1._rk/sec_per_year)
    case (2)
-      call self%get_parameter(self%R_max, 'R_max','# yr-1','maximum recruitment flux', minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+      call self%get_parameter(self%R_max, 'R_max','# m-2 yr-1','maximum recruitment flux', minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    end select
 
    call self%get_parameter(cannibalism,'cannibalism','',         'whether to enable intraspecific predation', default=.true.)
@@ -273,7 +275,7 @@ contains
    else
       self%psi(:) = (self%w/w_inf)**(1-n) / (1+(self%w/w_mat)**(-10)) ! allocation to reproduction [-]; Eqs M13 and M14 combined
    end if
-   if (.false.) then
+   if (report_statistics) then
       write (*,*) 'Specific search volume (yr-1):'
       write (*,*) '  @ mass = 1:',gamma*sec_per_year,'(gamma)'
       write (*,*) '  @ minimum mass:',self%V(1)*sec_per_year
@@ -302,6 +304,22 @@ contains
       write (*,*) 'Fishing mortality at maximum size:',self%F(self%nclass)*sec_per_year,'yr-1'
    end if
 
+   ! Set up submodel that translates the bottom flux of prey (g m-2 s-1) to the change in concetration (often g m-3 s-1)
+   allocate(scale_rate)
+   call self%add_child(scale_rate, 'prey_bottom_flux_converter', configunit=-1)
+   allocate(scale_rate%id_bottom_flux(self%nprey))
+   allocate(scale_rate%id_concentration(self%nprey))
+   call scale_rate%register_dependency(scale_rate%id_depth, 'interaction_depth', 'm', 'predator-prey interaction depth')
+   call scale_rate%request_coupling(scale_rate%id_depth, '../interaction_depth')
+
+   ! Set up submodel that calculates prey concentrations (g m-3) from internal biomass density (g m-2)
+   allocate(scale_state)
+   call self%add_child(scale_state, 'biomass_as_prey', configunit=-1)
+   allocate(scale_state%id_density(self%nclass))
+   allocate(scale_state%id_concentration(self%nclass))
+   call scale_state%register_dependency(scale_state%id_depth, 'interaction_depth', 'm', 'predator-prey interaction depth')
+   call scale_state%request_coupling(scale_state%id_depth, '../interaction_depth')
+
    ! Register dependencies for all prey.
    ! If the population is cannibalistic, autoamtically add all our size classes to the set of prey types.
    if (cannibalism) self%nprey = self%nprey + self%nclass
@@ -309,9 +327,20 @@ contains
    allocate(self%id_loss(self%nprey))
    do iprey=1,self%nprey
       write (strindex,'(i0)') iprey
-      call self%register_bottom_state_dependency(self%id_Nw_prey(iprey),'Nw_prey'//trim(strindex),'g PV-1','biomass of prey '//trim(strindex))
+      call self%register_bottom_state_dependency(self%id_Nw_prey(iprey),'Nw_prey'//trim(strindex),'g m-3','biomass of prey '//trim(strindex))
       call self%register_diagnostic_variable(self%id_loss(iprey), 'loss'//trim(strindex), 'd-1', 'specific loss of prey '//trim(strindex), source=source_do_bottom)
+      if (iprey <= self%nprey - self%nclass .or. .not. cannibalism) then
+         ! Pelagic prey - we need to convert the bottom flux of biomass into a change in concentration (= divide by depth)
+         call scale_rate%register_dependency(scale_rate%id_bottom_flux(iprey), 'bottom_flux'//trim(strindex), 'g m-2 s-1', 'bottom flux of prey '//trim(strindex))
+         call scale_rate%request_coupling(scale_rate%id_bottom_flux(iprey), 'biomass_as_prey/c'//trim(strindex)//'_sms_tot')
+         call scale_rate%register_state_dependency(scale_rate%id_concentration(iprey), 'Nw_prey'//trim(strindex), 'g m-3', 'biomass '//trim(strindex))
+         call scale_rate%request_coupling(scale_rate%id_concentration(iprey), '../Nw_prey'//trim(strindex))
+      end if
    end do
+
+   ! Depth over which predator-prey interact
+   ! If cannibalism is active, the fish per area will be divided by this depth to compute the prey concentration
+   call self%register_dependency(self%id_depth, 'interaction_depth', 'm', 'predator-prey interaction depth')
 
    ! Allocate size-class-specific identifiers for abundance state variable and diagnostics.
    allocate(self%id_Nw(self%nclass))
@@ -329,55 +358,24 @@ contains
       ! Register this size class' contribution to total mass in the system (for mass conservation checks)
       call self%add_to_aggregate_variable(total_mass,self%id_Nw(iclass))
 
+      call scale_state%register_dependency(scale_state%id_density(iclass), 'bm'//trim(strindex), 'g m-2', 'biomass '//trim(strindex))
+      call scale_state%request_coupling(scale_state%id_density(iclass), '../Nw'//trim(strindex))
+      call scale_state%register_diagnostic_variable(scale_state%id_concentration(iclass), 'c'//trim(strindex), 'g m-3', 'biomass concentration', act_as_state_variable=.true., output=output_none, domain=domain_bottom)
+      call self%set_variable_property(scale_state%id_concentration(iclass), 'particle_mass', self%w(iclass))
+
+      ! Apply bottom flux (g m-2 s-1) to original biomass density
+      call copy_horizontal_fluxes(scale_state, scale_state%id_concentration(iclass), '../Nw'//trim(strindex))
+
+      ! If population is cannibalistic, add this size class as one of the prey (after the user-specified prey set).
+      if (cannibalism) then
+         call self%request_coupling(self%id_Nw_prey(self%nprey - self%nclass + iclass), 'biomass_as_prey/c'//trim(strindex))
+      end if
+
       ! Register size-class-specific diagnostics
       call self%register_diagnostic_variable(self%id_reproduction(iclass),'reproduction'//trim(strindex),'g m-2 d-1','allocation to reproduction in size class '//trim(strindex),         source=source_do_bottom)
       call self%register_diagnostic_variable(self%id_f(iclass),           'f'//trim(strindex),           '-',        'functional response of size class '//trim(strindex),                source=source_do_bottom)
       call self%register_diagnostic_variable(self%id_g(iclass),           'g'//trim(strindex),           'd-1',      'specific growth rate of individuals in size class '//trim(strindex),source=source_do_bottom)
    end do
-
-   ! If population is cannibalistic, add this size class as one of the prey (after the user-specified prey set).
-   if (cannibalism) then
-       if (.not.biomass_has_prey_unit) then
-           ! Biomass needs to be converted to prey unit (and the rate of change due to predation needs to be converted back)
-           call self%register_dependency(self%id_biomass_to_prey, 'biomass_to_prey', '', 'biomass-to-prey scale factor')
-
-           ! Set up submodel that calculates prey concentrations (often g m-3) from internal biomass unit (often g m-2)
-           allocate(scale_state)
-           call self%add_child(scale_state, 'biomass_as_prey', configunit=-1)
-           allocate(scale_state%id_state(self%nclass))
-           allocate(scale_state%id_scaled_state(self%nclass))
-           call scale_state%register_dependency(scale_state%id_scale_factor, 'scale_factor')
-           call scale_state%request_coupling(scale_state%id_scale_factor, '../biomass_to_prey')
-
-           ! Set up submodel that translates the change in prey concentration (often g m-3) to the change in internal biomass unit (often g m-2)
-           allocate(scale_rate)
-           call self%add_child(scale_rate, 'change_in_biomass_as_prey', configunit=-1)
-           allocate(scale_rate%id_rate(self%nclass))
-           allocate(scale_rate%id_state(self%nclass))
-           call scale_rate%register_dependency(scale_rate%id_inv_scale_factor, 'inv_scale_factor')
-           call scale_rate%request_coupling(scale_rate%id_inv_scale_factor, '../biomass_to_prey')
-
-           do iclass=1,self%nclass
-               write (strindex,'(i0)') iclass
-
-               call scale_state%register_dependency(scale_state%id_state(iclass), 'bm'//trim(strindex), '', 'biomass '//trim(strindex))
-               call scale_state%request_coupling(scale_state%id_state(iclass), '../Nw'//trim(strindex))
-               call scale_state%register_diagnostic_variable(scale_state%id_scaled_state(iclass), 'c'//trim(strindex), 'g PV-1', 'biomass '//trim(strindex)//' in prey units', act_as_state_variable=.true., output=output_none)
-               call self%set_variable_property(scale_state%id_scaled_state(iclass),'particle_mass',self%w(iclass))
-               call self%request_coupling(self%id_Nw_prey(self%nprey-self%nclass+iclass),'biomass_as_prey/c'//trim(strindex))
-
-               call scale_rate%register_dependency(scale_rate%id_rate(iclass), 'sms'//trim(strindex), 'g PV-1 s-1', 'change in concentration '//trim(strindex))
-               call scale_rate%request_coupling(scale_rate%id_rate(iclass), 'biomass_as_prey/c'//trim(strindex)//'_sms_tot')
-               call scale_rate%register_state_dependency(scale_rate%id_state(iclass), 'bm'//trim(strindex), '', 'biomass '//trim(strindex))
-               call scale_rate%request_coupling(scale_rate%id_state(iclass), '../Nw'//trim(strindex))
-           end do
-        else
-           do iclass=1,self%nclass
-               write (strindex,'(i0)') iclass
-               call self%request_coupling(self%id_Nw_prey(self%nprey-self%nclass+iclass),'Nw'//trim(strindex))
-           end do
-        end if
-    end if
 
    allocate(self%phi(self%nprey,self%nclass))
 
@@ -389,8 +387,8 @@ contains
 
    ! Register diagnostic for total offspring production across population.
    call self%register_diagnostic_variable(self%id_total_reproduction,'total_reproduction','g m-2 d-1','total reproduction',source=source_do_bottom)
-   call self%register_diagnostic_variable(self%id_R_p,'R_p','# d-1','density-independent recruitment',source=source_do_bottom)
-   call self%register_diagnostic_variable(self%id_R,'R','# d-1','recruitment',source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_R_p,'R_p','# m-2 d-1','density-independent recruitment',source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_R,'R','# m-2 d-1','recruitment',source=source_do_bottom)
 
    end subroutine initialize
 !EOC
@@ -404,7 +402,6 @@ contains
 
       ! Coupling with prey has completed.
       ! Now we can query all prey for their wet mass per individual. From that we precompute predator-prey preferences.
-
       do iprey=1,self%nprey
          ! First retrieve individual mass of prey (throw fatal error if not available)
          w_p = self%id_Nw_prey(iprey)%link%target%properties%get_real('particle_mass',-1._rk)
@@ -429,15 +426,12 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey
-      real(rk) :: prey_per_biomass,E_e,E_a,f,total_reproduction,T_lim,temp,g_tot,R,R_p,nflux(0:self%nclass)
+      real(rk) :: E_e,E_a,f,total_reproduction,T_lim,temp,g_tot,R,R_p,nflux(0:self%nclass)
       real(rk),dimension(self%nprey)  :: Nw_prey,prey_loss
       real(rk),dimension(self%nclass) :: Nw,I,maintenance,g,mu,reproduction
       real(rk), parameter :: delta_t = 12._rk/86400
 
       _HORIZONTAL_LOOP_BEGIN_
-
-         prey_per_biomass = 1
-         if (_VARIABLE_REGISTERED_(self%id_biomass_to_prey)) _GET_HORIZONTAL_(self%id_biomass_to_prey, prey_per_biomass)
 
          ! Retrieve size-class-specific abundances
          do iclass=1,self%nclass
@@ -483,16 +477,14 @@ contains
 #endif
 
             ! Account for this size class' ingestion in specific loss rate of all prey
-            ! Units go from (g prey s-1 g-1) to (s-1) - we divide by prey and multiply by predator,
-            ! and correct for any difference in spatial units (e.g., prey in m-3, predator in m-2) by multiplying with prey_per_biomass.
-            prey_loss(:) = prey_loss(:) + I(iclass)/E_a*self%phi(:,iclass)*Nw(iclass)*prey_per_biomass
+            ! Units go from (g prey s-1 g-1) to (m s-1) - a relative bottom flux for prey concentration -
+            ! by dividing by prey (g m-3) and multiply by predator (g m-2)
+            prey_loss(:) = prey_loss(:) + I(iclass)/E_a*self%phi(:,iclass)*Nw(iclass)
          end do
 
 #ifndef NDEBUG
          if (any(prey_loss<0)) &
             call self%fatal_error('do_bottom','prey_loss is negative')
-         !if (any(prey_loss>delta_t)) &
-         !   call self%fatal_error('do_bottom','prey_loss is high (prey will be <0 within time step)')
 #endif
 
          ! Initialize size-class-specific mortality (s-1) with precomputed size-dependent background value.
@@ -514,18 +506,18 @@ contains
             ! Individual growth (s-1)
             g(iclass) = (1-self%psi(iclass))*g_tot ! Eq M7
 
-            ! Mass flux towards reproduction (g s-1) - sum over all individuals in this size class
+            ! Mass flux towards reproduction (g m-2 s-1) - sum over all individuals in this size class
             reproduction(iclass) = self%psi(iclass)*g_tot*Nw(iclass)
          end do
 
          ! Compute number of individuals moving from each size class to the next (units: # s-1)
          nflux(1:self%nclass) = Nw*g/self%delta_w
 
-         ! Sum reproductive output of entire population in g s-1 (Eq 10 of Hartvig et al. 2011 JTB)
+         ! Sum reproductive output of entire population in g m-2 s-1 (Eq 10 of Hartvig et al. 2011 JTB)
          ! Note: division by 2 is the result of the fact that reproductive output applies to females only,
          ! which are assumed to be 50% of the population.
          total_reproduction = sum(reproduction)
-         R_p = self%erepro/2*total_reproduction/self%w_min
+         R_p = self%erepro / 2 * total_reproduction / self%w_min
 
          ! Use stock-recruitment relationship to translate density-independent recruitment into actual recruitment (units: # s-1)
          if (self%SRR==0) then
@@ -545,9 +537,9 @@ contains
          nflux(0) = R
 
          ! Send prey consumption to FABM (combined impact of all size classes, per prey type)
-         ! Here we convert specific prey losses to absolute prey losses by multiplying with prey biomass.
+         ! This is represented as a bottom flux for prey concentration (g m-2 s-1)
          do iprey=1,self%nprey
-            _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey),-prey_loss(iprey)*Nw_prey(iprey))
+            _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey), -prey_loss(iprey)*Nw_prey(iprey))
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_loss(iprey), prey_loss(iprey)*86400)
          end do
 
@@ -569,37 +561,37 @@ contains
 
    end subroutine do_bottom
 
-   subroutine scale_state_do_bottom(self,_ARGUMENTS_DO_BOTTOM_)
-      class (type_scale_state),intent(in) :: self
+   subroutine map_density_to_concentration_do_bottom(self,_ARGUMENTS_DO_BOTTOM_)
+      class (type_map_density_to_concentration), intent(in) :: self
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass
-      real(rk) :: scale_factor, state
+      real(rk) :: depth, density
 
       _HORIZONTAL_LOOP_BEGIN_
-         _GET_HORIZONTAL_(self%id_scale_factor,scale_factor)
-         do iclass=1,size(self%id_state)
-            _GET_HORIZONTAL_(self%id_state(iclass),state)
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_scaled_state(iclass),state*scale_factor)
+         _GET_HORIZONTAL_(self%id_depth, depth)
+         do iclass=1,size(self%id_density)
+            _GET_HORIZONTAL_(self%id_density(iclass), density)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_concentration(iclass), density / depth)
          end do
       _HORIZONTAL_LOOP_END_
-   end subroutine scale_state_do_bottom
+   end subroutine
 
-   subroutine scale_rate_do_bottom(self,_ARGUMENTS_DO_BOTTOM_)
-      class (type_scale_rate),intent(in) :: self
+   subroutine apply_bottom_flux_to_concentration_do_bottom(self,_ARGUMENTS_DO_BOTTOM_)
+      class (type_apply_bottom_flux_to_concentration), intent(in) :: self
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass
-      real(rk) :: inv_scale_factor, rate
+      real(rk) :: depth, bottom_flux
 
       _HORIZONTAL_LOOP_BEGIN_
-         _GET_HORIZONTAL_(self%id_inv_scale_factor,inv_scale_factor)
-         do iclass=1,size(self%id_state)
-            _GET_HORIZONTAL_(self%id_rate(iclass),rate)
-            _SET_BOTTOM_ODE_(self%id_state(iclass),rate/inv_scale_factor)
+         _GET_HORIZONTAL_(self%id_depth, depth)
+         do iclass=1,size(self%id_concentration)
+            _GET_HORIZONTAL_(self%id_bottom_flux(iclass), bottom_flux)
+            _SET_BOTTOM_ODE_(self%id_concentration(iclass), bottom_flux / depth)
          end do
       _HORIZONTAL_LOOP_END_
-   end subroutine scale_rate_do_bottom
+   end subroutine
 
 !-----------------------------------------------------------------------
 

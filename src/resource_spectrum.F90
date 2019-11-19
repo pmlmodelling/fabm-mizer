@@ -80,7 +80,7 @@ contains
    call self%get_parameter(w_max,      'w_max',  'g',           'maximum size', minimum=0.0_rk)
    call self%get_parameter(r0,         'r0',     'g^(1-n) yr-1','pre-factor for growth rate r', default=10._rk, scale_factor=1/sec_per_year, minimum=0.0_rk)
    call self%get_parameter(n,          'n',      '-',           'exponent of max. consumption', default=2.0_rk/3.0_rk)
-   call self%get_parameter(kappa,      'kappa',  'g^(lambda-1)','pre-factor for carrying capacity', default=1.e11_rk, minimum=0.0_rk)
+   call self%get_parameter(kappa,      'kappa',  'g^(lambda-1) m-3','pre-factor for carrying capacity', default=1.e11_rk, minimum=0.0_rk)
    call self%get_parameter(lambda,     'lambda', '-',           'exponent of background resource spectrum', default=2.8_rk-n)
 
    delta_logw = (log(w_max)-log(w_min))/(self%nclass-1)       ! Log-weight distance between size classes [constant across spectrum]
@@ -104,11 +104,11 @@ contains
       write (strindex,'(i0)') iclass
 
       ! Register state variable, store associated individual mass (used by predators, if any, to determine grazing preference).
-      call self%register_state_variable(self%id_Nw(iclass),'Nw'//trim(strindex),'g m-2','biomass in size class '//trim(strindex), self%K(iclass), minimum=0.0_rk, maximum=self%K(iclass))
-      call self%set_variable_property(self%id_Nw(iclass),'particle_mass',self%w(iclass))
-      call self%add_to_aggregate_variable(total_mass,self%id_Nw(iclass))
+      call self%register_state_variable(self%id_Nw(iclass), 'Nw'//trim(strindex), 'g m-3', 'biomass in size class '//trim(strindex), self%K(iclass), minimum=0.0_rk, maximum=self%K(iclass))
+      call self%set_variable_property(self%id_Nw(iclass), 'particle_mass', self%w(iclass))
+      call self%add_to_aggregate_variable(total_mass, self%id_Nw(iclass))
    end do
-   call self%register_state_variable(self%id_waste,'waste','g m-2','waste')
+   call self%register_state_variable(self%id_waste, 'waste', 'g m-3', 'waste')
    call self%add_to_aggregate_variable(total_mass,self%id_waste)
 
    end subroutine initialize
@@ -123,18 +123,17 @@ contains
 
       _HORIZONTAL_LOOP_BEGIN_
          do iclass=1,self%nclass
-            _GET_HORIZONTAL_(self%id_Nw(iclass),Nw(iclass))
+            _GET_HORIZONTAL_(self%id_Nw(iclass), Nw(iclass))
          end do
 
          ! Semi-chemostatic growth for all size classes [not logistic!]
-         dNw = self%r*(self%K-Nw)
+         dNw = self%r * (self%K - Nw)
 
          do iclass=1,self%nclass
-            _SET_BOTTOM_ODE_(self%id_Nw(iclass),dNw(iclass))
+            _SET_BOTTOM_ODE_(self%id_Nw(iclass), dNw(iclass))
          end do
-         _SET_BOTTOM_ODE_(self%id_waste,-sum(dNw))
+         _SET_BOTTOM_ODE_(self%id_waste, -sum(dNw))
       _HORIZONTAL_LOOP_END_
-
    end subroutine do_bottom
 
 !-----------------------------------------------------------------------
