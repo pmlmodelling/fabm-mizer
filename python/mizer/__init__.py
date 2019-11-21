@@ -18,7 +18,7 @@ except ImportError:
     print('Unable to load pyfabm. See https://github.com/fabm-model/code/wiki/python.')
     sys.exit(1)
 
-import datasources
+from . import datasources
 
 class Prey(object):
     def __init__(self, name, mass, value):
