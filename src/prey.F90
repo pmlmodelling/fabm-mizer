@@ -49,6 +49,10 @@ contains
    call self%register_state_variable(self%id_Nw, 'Nw', 'g m-3', 'biomass')
    call self%get_parameter(w, 'w', 'g', 'mass per individual')
    call self%set_variable_property(self%id_Nw, 'particle_mass', w)
+   call self%get_parameter(w, 'w_min', 'g', 'minimum mass per individual', default=-1._rk)
+   if (w >= 0) call self%set_variable_property(self%id_Nw, 'min_particle_mass', w)
+   call self%get_parameter(w, 'w_max', 'g', 'maximum mass per individual', default=-1._rk)
+   if (w >= 0) call self%set_variable_property(self%id_Nw, 'max_particle_mass', w)
 
    end subroutine initialize
 !EOC
