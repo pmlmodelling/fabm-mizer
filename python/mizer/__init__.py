@@ -172,10 +172,10 @@ class Mizer(object):
             self.temperature.value = self.temperature_provider.mean()
             assert self.temperature.value > -10. and self.temperature.value < 40., 'Invalid temperature mean (%s)' % self.temperature.value
         if depth is not None:
-            self.prey_per_biomass = self.fabm_model.findDependency('fish/biomass_to_prey')
-            self.prey_per_biomass.value = 1./self.depth_provider.mean()
+            self.interaction_depth = self.fabm_model.findDependency('fish/interaction_depth')
+            self.interaction_depth.value = self.depth_provider.mean()
             if verbose:
-                print('Mean depth: %.1f m' % (1./self.prey_per_biomass.value))
+                print('Mean depth: %.1f m' % (self.interaction_depth.value,))
 
         # Verify the model is ready to be used
         assert self.fabm_model.checkReady(), 'One or more model dependencies have not been fulfilled.'
@@ -204,7 +204,7 @@ class Mizer(object):
         temperature = self.temperature
         temperature_provider = self.temperature_provider
         if depth_provider is not None:
-            prey_per_biomass = self.prey_per_biomass
+            interaction_depth = self.interaction_depth
         prey = self.prey
         prey_indices = self.prey_indices
         ibin0 = self.bin_indices[0]
@@ -237,11 +237,11 @@ class Mizer(object):
             if temperature_provider is not None:
                 temperature.value = temperature_provider.mean()
             if depth_provider is not None:
-                prey_per_biomass.value = 1./depth_provider.mean()
+                interaction_depth.value = depth_provider.mean()
             if recruitment_from_prey:
                 state[ibin0] = getEggs(state[prey_indices])
                 if depth_provider is not None:
-                    state[ibin0] /= prey_per_biomass.value
+                    state[ibin0] *= interaction_depth.value
             if verbose:
                 print('Spinning up from %s to %s' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
 
@@ -270,12 +270,12 @@ class Mizer(object):
         preys = prey.getValues(ts)
         assert (preys >= 0).all(), 'Minimum prey concentration < 0: %s' % (preys.min(),)
         if depth_provider is not None:
-            invdepths = 1./depth_provider.get(ts)
-            assert (invdepths >= 0).all(), 'Minimum 1/depth < 0: %s' % (invdepths.min(),)
+            depths = depth_provider.get(ts)
+            assert (depths >= 0).all(), 'Minimum depth < 0: %s' % (depths.min(),)
         if recruitment_from_prey:
             eggs = getEggs(preys)
             if depth_provider is not None:
-                eggs[:] /= invdepths
+                eggs[:] *= depths
         if temperature_provider is not None:
             temperatures = temperature_provider.get(ts)
 
@@ -288,7 +288,7 @@ class Mizer(object):
             if temperature_provider is not None:
                 temperature.value = temperatures[itime]
             if depth_provider is not None:
-                prey_per_biomass.value = invdepths[itime]
+                interaction_depth.value = depths[itime]
             if recruitment_from_prey:
                 state[ibin0] = eggs[itime]
             checkState(repair=True)
@@ -338,7 +338,7 @@ class Mizer(object):
         if self.recruitment_from_prey:
             initial_state[self.bin_indices[0]] = initial_state[self.prey_indices].mean()*self.log10bin_width/self.prey.delta_log10mass
             if self.depth_provider is not None:
-                initial_state[self.bin_indices[0]] /= self.prey_per_biomass.value
+                initial_state[self.bin_indices[0]] *= self.interaction_depth.value
 
         parameters = dict(self.parameters)
         def landings(F):
@@ -350,7 +350,7 @@ class Mizer(object):
             if m.temperature_provider is not None:
                 m.temperature.value = m.temperature_provider.mean()
             if m.depth_provider is not None:
-                m.prey_per_biomass.value = 1./m.depth_provider.mean()
+                m.interaction_depth.value = m.depth_provider.mean()
             state = m.fabm_model.state
             getRates = m.fabm_model.getRates
             y = scipy.integrate.odeint(dy, initial_state, t_spinup)
