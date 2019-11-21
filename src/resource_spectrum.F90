@@ -59,15 +59,15 @@ contains
    subroutine initialize(self,configunit)
 !
 ! !INPUT PARAMETERS:
-   class (type_resource_spectrum), intent(inout),target :: self
-   integer,                        intent(in )          :: configunit
+   class (type_resource_spectrum), intent(inout), target :: self
+   integer,                        intent(in )           :: configunit
 !
 ! !LOCAL VARIABLES:
    integer              :: iclass
    real(rk)             :: delta_logw, logw
-   real(rk)             :: kappa,lambda,r0,w_min,w_max,n
-   real(rk),allocatable :: delta_w(:)
-   real(rk),parameter   :: sec_per_year = 86400*365.2425_rk
+   real(rk)             :: kappa, lambda, r0, w_min, w_max, n
+   real(rk),allocatable :: logw_bounds(:)
+   real(rk),parameter   :: sec_per_year = 86400 * 365.2425_rk
    character(len=10)    :: strindex
 !EOP
 !-----------------------------------------------------------------------
@@ -83,20 +83,20 @@ contains
    call self%get_parameter(kappa,      'kappa',  'g^(lambda-1) m-3','pre-factor for carrying capacity', default=1.e11_rk, minimum=0.0_rk)
    call self%get_parameter(lambda,     'lambda', '-',           'exponent of background resource spectrum', default=2.8_rk-n)
 
-   delta_logw = (log(w_max)-log(w_min))/(self%nclass-1)       ! Log-weight distance between size classes [constant across spectrum]
-   allocate(self%w(self%nclass))
-   allocate(delta_w(self%nclass))
-   do iclass=1,self%nclass
-      logw = log(w_min)+delta_logw*(iclass-1)
-      self%w(iclass) = exp(logw)  ! Weight of each size class
-      delta_w(iclass) = exp(logw+delta_logw/2) - exp(logw-delta_logw/2)
+   delta_logw = (log(w_max) - log(w_min)) / self%nclass       ! Log-weight distance between size classes [constant across spectrum]
+   allocate(logw_bounds(self%nclass + 1))
+   do iclass = 1, self%nclass + 1
+      logw_bounds(iclass) = log(w_min) + delta_logw * (iclass - 1)
    end do
+
+   allocate(self%w(self%nclass))
+   self%w(:) = exp(0.5_rk * (logw_bounds(:self%nclass) + logw_bounds(2:)))  ! Weight of each size class at bin centres
 
    ! Compute size-specific parameters that do not vary in time. It is most efficient to compute these once, during initialization.
    allocate(self%r(self%nclass))
    allocate(self%K(self%nclass))
    self%r(:) = r0*self%w**(n-1)                   ! specific growth rate r
-   self%K(:) = kappa*self%w**(-lambda+1)*delta_w  ! carrying capacity K (in Blanchard et al in units # g-1 - here, we premultiply with biomass and bin width!!)
+   self%K(:) = kappa*self%w**(-lambda+1) * (exp(logw_bounds(2:)) - exp(logw_bounds(:self%nclass)))  ! carrying capacity K (in Blanchard et al in units # g-1 - here, we premultiply with biomass and bin width!!)
 
    allocate(self%id_Nw(self%nclass))
    do iclass=1,self%nclass
@@ -106,6 +106,8 @@ contains
       ! Register state variable, store associated individual mass (used by predators, if any, to determine grazing preference).
       call self%register_state_variable(self%id_Nw(iclass), 'Nw'//trim(strindex), 'g m-3', 'biomass in size class '//trim(strindex), self%K(iclass), minimum=0.0_rk, maximum=self%K(iclass))
       call self%set_variable_property(self%id_Nw(iclass), 'particle_mass', self%w(iclass))
+      call self%set_variable_property(self%id_Nw(iclass), 'min_particle_mass', exp(logw_bounds(iclass)))
+      call self%set_variable_property(self%id_Nw(iclass), 'max_particle_mass', exp(logw_bounds(iclass + 1)))
       call self%add_to_aggregate_variable(total_mass, self%id_Nw(iclass))
    end do
    call self%register_state_variable(self%id_waste, 'waste', 'g m-3', 'waste')

@@ -211,12 +211,12 @@ contains
    allocate(self%logw(self%nclass))
    allocate(self%w(self%nclass))
    allocate(self%delta_w(self%nclass))
-   delta_logw = (log(w_inf)-log(self%w_min))/(self%nclass-1)       ! Log-mass distance between size classes [constant across spectrum]
-   do iclass=1,self%nclass
-      self%logw(iclass) = log(self%w_min)+delta_logw*(iclass-1)    ! Log mass of each size class
+   delta_logw = (log(w_inf) - log(self%w_min)) / self%nclass               ! Log-mass distance between size classes [constant across spectrum]
+   do iclass = 1, self%nclass
+      self%logw(iclass) = log(self%w_min) + delta_logw * (iclass - 0.5_rk) ! Log mass of each size class
    end do
-   self%w = exp(self%logw)                                         ! Mass of each size class
-   self%delta_w = exp(self%logw+delta_logw) - self%w               ! Mass difference between consecutive size classes
+   self%w = exp(self%logw)                                                 ! Mass of each size class
+   self%delta_w = exp(self%logw + delta_logw) - self%w                     ! Mass difference between consecutive size classes
 
    ! Compute size-class-specific parameters that do not vary in time. It is most efficient to compute these once, during initialization.
    allocate(self%I_max(self%nclass))
@@ -396,26 +396,47 @@ contains
    subroutine after_coupling(self)
       class (type_size_structured_population),intent(inout) :: self
 
-      integer           :: iprey,iclass
+      integer           :: iprey, iclass, i
       character(len=10) :: strindex
-      real(rk)          :: w_p
+      integer, parameter :: n = 100
+      real(rk)          :: w_p, w_p_min, w_p_max, log_w_ps(n)
 
       ! Coupling with prey has completed.
       ! Now we can query all prey for their wet mass per individual. From that we precompute predator-prey preferences.
-      do iprey=1,self%nprey
+      do iprey = 1, self%nprey
          ! First retrieve individual mass of prey (throw fatal error if not available)
-         w_p = self%id_Nw_prey(iprey)%link%target%properties%get_real('particle_mass',-1._rk)
-         if (w_p<0) then
-            write (strindex,'(i0)') iprey
-            call self%fatal_error('after_coupling','prey '//trim(strindex)//' does not have attribute "particle_mass" set.')
-         end if
+         w_p = self%id_Nw_prey(iprey)%link%target%properties%get_real('particle_mass', -1._rk)
+         w_p_min = self%id_Nw_prey(iprey)%link%target%properties%get_real('min_particle_mass', -1._rk)
+         w_p_max = self%id_Nw_prey(iprey)%link%target%properties%get_real('max_particle_mass', -1._rk)
+         if (w_p_min > 0 .and. w_p_max > 0) then
+            ! A size range (minimum wet mass - maximum wet mass) for this prey is given.
+            ! We assume that within this range, biomass is uniformly distributed in log wet mass - log total biomass space (= a Sheldon size spectrum)
+            ! The effective preference is computed by averaging the (Gaussian) preference curve over the relevant interval.
+            ! That is done below by discretizing the wet mass interval.
 
-         ! Compute size-class-specific preference for current prey; Eq 4 in Hartvig et al. 2011 JTB, but note sigma typo confirmed by KH Andersen
-         ! This is a log-normal distribution of prey mass, scaled such that at optimum prey mass (=predator mass/beta), the preference equals 1.
-         ! sigma is the standard deviation in ln mass units.
-         do iclass=1, self%nclass
-            self%phi(iprey, iclass) = exp(-(log(w_p) - self%logw(iclass) + log(self%beta))**2 / self%sigma**2 / 2)
-         end do
+            ! Create log-spaced grid for prey size range
+            do i = 1, n
+               log_w_ps(i) = log(w_p_min) + (i - 0.5_rk) * (log(w_p_max) - log(w_p_min)) / n
+            end do
+
+            ! Compute size-class-specific preference for current prey; Eq 4 in Hartvig et al. 2011 JTB, but note sigma typo confirmed by KH Andersen
+            ! This is a log-normal distribution of prey mass, scaled such that at optimum prey mass (=predator mass/beta), the preference equals 1.
+            ! sigma is the standard deviation in ln mass units.
+            do iclass=1, self%nclass
+               self%phi(iprey, iclass) = sum(exp(-(log_w_ps - self%logw(iclass) + log(self%beta))**2 / self%sigma**2 / 2)) / n
+            end do
+         elseif (w_p > 0) then
+            ! A single size (wet mass) for this prey is given.
+            ! Compute size-class-specific preference for current prey; Eq 4 in Hartvig et al. 2011 JTB, but note sigma typo confirmed by KH Andersen
+            ! This is a log-normal distribution of prey mass, scaled such that at optimum prey mass (=predator mass/beta), the preference equals 1.
+            ! sigma is the standard deviation in ln mass units.
+            do iclass=1, self%nclass
+               self%phi(iprey, iclass) = exp(-(log(w_p) - self%logw(iclass) + log(self%beta))**2 / self%sigma**2 / 2)
+            end do
+         else
+            write (strindex, '(i0)') iprey
+            call self%fatal_error('after_coupling', 'prey '//trim(strindex)//' does not have attribute "particle_mass" or the combination "min_particle_mass", "max_particle_mass".')
+         end if
       end do
       if (any(self%phi < 0)) call self%fatal_error('after_coupling', 'one or more entries of phi are < 0')
 
@@ -534,29 +555,30 @@ contains
          end if
 
          ! Use recruitment as number of incoming individuals for the first size class.
-         nflux(0) = R
+         ! First compute incoming mass (# individuals * minimum mass w_min) then divide by centre mass of first bin to get # of individuals
+         nflux(0) = R * self%w_min / self%w(1)
 
          ! Send prey consumption to FABM (combined impact of all size classes, per prey type)
          ! This is represented as a bottom flux for prey concentration (g m-2 s-1)
-         do iprey=1,self%nprey
-            _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey), -prey_loss(iprey)*Nw_prey(iprey))
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_loss(iprey), prey_loss(iprey)*86400)
+         do iprey = 1, self%nprey
+            _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey), -prey_loss(iprey) * Nw_prey(iprey))
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_loss(iprey), prey_loss(iprey) * 86400)
          end do
 
          ! Transfer size-class-specific source terms and diagnostics to FABM
-         do iclass=1,self%nclass
+         do iclass = 1, self%nclass
             ! Apply specific mortality (s-1) to size-class-specific abundances and apply upwind advection - this is a time-explicit version of Eq G.1 of Hartvig et al.
-            _SET_BOTTOM_ODE_(self%id_Nw(iclass),-(mu(iclass) + self%F(iclass))*Nw(iclass) + (nflux(iclass-1)-nflux(iclass))*self%w(iclass))
+            _SET_BOTTOM_ODE_(self%id_Nw(iclass), -(mu(iclass) + self%F(iclass)) * Nw(iclass) + (nflux(iclass - 1) - nflux(iclass)) * self%w(iclass))
 
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g(iclass),g(iclass)*86400)
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_reproduction(iclass),reproduction(iclass)*86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g(iclass), g(iclass) * 86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_reproduction(iclass), reproduction(iclass) * 86400)
          end do
 
-         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_total_reproduction,total_reproduction*86400)
-         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R_p,R_p*86400)
-         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R,R*86400)
-         _SET_BOTTOM_ODE_(self%id_waste,sum(((1-self%alpha)*I + maintenance + mu)*Nw) + total_reproduction - R*self%w_min + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass)))
-         _SET_BOTTOM_ODE_(self%id_landings,sum(self%F*Nw))
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_total_reproduction, total_reproduction * 86400)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R_p, R_p * 86400)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R, R * 86400)
+         _SET_BOTTOM_ODE_(self%id_waste, sum(((1._rk - self%alpha) * I + maintenance + mu) * Nw) + total_reproduction - R*self%w_min + nflux(self%nclass) * (self%w(self%nclass) + self%delta_w(self%nclass)))
+         _SET_BOTTOM_ODE_(self%id_landings, sum(self%F * Nw))
       _HORIZONTAL_LOOP_END_
 
    end subroutine do_bottom
