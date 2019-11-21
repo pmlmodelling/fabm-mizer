@@ -200,7 +200,7 @@ contains
    ! Pre-factor for volumetric search rate (Eq M2)
    gamma = f0*h*self%beta**(2-lambda)/((1-f0)*sqrt(2*pi)*kappa*self%sigma)
    !gamma = f0*h*self%beta**(2-lambda)/((1-f0)*sqrt(2*pi)*kappa*self%sigma*exp((lambda-2)**2 * self%sigma**2 / 2)) ! add exp term taken from actual R code
-   call self%get_parameter(gamma, 'gamma', 'PV yr-1 g^(-q)', 'pre-factor for volumetric search rate', minimum=0.0_rk, default=gamma*sec_per_year, scale_factor=1._rk/sec_per_year)
+   call self%get_parameter(gamma, 'gamma', 'm3 yr-1 g^(-q)', 'pre-factor for volumetric search rate', minimum=0.0_rk, default=gamma*sec_per_year, scale_factor=1._rk/sec_per_year)
 
    ! Allow user override of standard metabolism pre-factor (e.g., Blanchard community size spectrum model has ks=0)
    call self%get_parameter(ks, 'ks', 'yr-1 g^(-p)', 'pre-factor for standard metabolism', minimum=0.0_rk, default=0.2_rk*h*sec_per_year, scale_factor=1._rk/sec_per_year)
@@ -321,7 +321,7 @@ contains
    call scale_state%request_coupling(scale_state%id_depth, '../interaction_depth')
 
    ! Register dependencies for all prey.
-   ! If the population is cannibalistic, autoamtically add all our size classes to the set of prey types.
+   ! If the population is cannibalistic, automatically add all our size classes to the set of prey types.
    if (cannibalism) self%nprey = self%nprey + self%nclass
    allocate(self%id_Nw_prey(self%nprey))
    allocate(self%id_loss(self%nprey))
@@ -330,7 +330,7 @@ contains
       call self%register_bottom_state_dependency(self%id_Nw_prey(iprey),'Nw_prey'//trim(strindex),'g m-3','biomass of prey '//trim(strindex))
       call self%register_diagnostic_variable(self%id_loss(iprey), 'loss'//trim(strindex), 'd-1', 'specific loss of prey '//trim(strindex), source=source_do_bottom)
       if (iprey <= self%nprey - self%nclass .or. .not. cannibalism) then
-         ! Pelagic prey - we need to convert the bottom flux of biomass into a change in concentration (= divide by depth)
+         ! Pelagic prey (not one of our own size classes) - we need to convert the bottom flux of biomass into a change in concentration (= divide by depth)
          call scale_rate%register_dependency(scale_rate%id_bottom_flux(iprey), 'bottom_flux'//trim(strindex), 'g m-2 s-1', 'bottom flux of prey '//trim(strindex))
          call scale_rate%request_coupling(scale_rate%id_bottom_flux(iprey), 'biomass_as_prey/c'//trim(strindex)//'_sms_tot')
          call scale_rate%register_state_dependency(scale_rate%id_concentration(iprey), 'Nw_prey'//trim(strindex), 'g m-3', 'biomass '//trim(strindex))
