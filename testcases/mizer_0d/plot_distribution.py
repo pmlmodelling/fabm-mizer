@@ -6,8 +6,6 @@ import netCDF4
 import numpy
 import pylab
 
-min_abundance = 0.1
-
 class NcResult(object):
    def __init__(self, path):
       self.nc = netCDF4.Dataset(path)
@@ -91,7 +89,7 @@ class SizeStructure:
       pylab.axis('tight')
       pylab.yscale('log')
 
-def plot(result, nspinup=0, instance='fish', resource_instance='resource', animate=False, spacing=30):
+def plot(result, nspinup=0, instance='fish', resource_instance='resource', animate=False, spacing=30, min_density=None):
    pop = SizeStructure(result, '%s_' % instance)
    resource = SizeStructure(result, '%s_' % resource_instance)
    dts = result.getTime()
@@ -108,6 +106,8 @@ def plot(result, nspinup=0, instance='fish', resource_instance='resource', anima
    spectrum = pop.getData('Nw') / pop.delta_mass[:, numpy.newaxis]
    feeding_level = pop.getData('f')
    resource_spectrum = resource.getData('Nw')/resource.delta_mass[:, numpy.newaxis]
+   if min_density is None:
+      min_density = spectrum.min()
 
    fig = pylab.figure(figsize=(8, 5))
    pylab.plot_date(numdts[istart:], total_repr[istart:], '-')
@@ -166,7 +166,7 @@ def plot(result, nspinup=0, instance='fish', resource_instance='resource', anima
    pylab.close(fig)
 
    fig = pylab.figure(figsize=(8, 8))
-   pop.pcolor(spectrum, 'biomass density', '-', norm=matplotlib.colors.LogNorm(vmin=min_abundance))
+   pop.pcolor(spectrum, 'biomass density', '-', norm=matplotlib.colors.LogNorm(vmin=min_density))
    pylab.savefig('spectrum.png', dpi=150)
    pylab.close(fig)
 
@@ -178,7 +178,7 @@ def plot(result, nspinup=0, instance='fish', resource_instance='resource', anima
    #pylab.ylim(1e-2, spectrum.max())
    #pylab.xlim(None,1e-1)
    pylab.xlabel('mass (g)')
-   pylab.ylabel('abundance (#)')
+   pylab.ylabel('biomass density (-)')
    pylab.savefig('timeseries.png', dpi=150)
    pylab.close(fig)
 
@@ -190,10 +190,10 @@ def plot(result, nspinup=0, instance='fish', resource_instance='resource', anima
       fig = pylab.figure()
       pylab.grid(True)
       pylab.xlabel('mass (g)')
-      pylab.ylabel('abundance (#)')
+      pylab.ylabel('biomass density (-)')
       pylab.xscale('log')
       pylab.yscale('log')
-      pylab.ylim(min_abundance,spectrum.max())
+      pylab.ylim(min_density, spectrum.max())
       #pylab.xlim(None,1e-1)
       #line, = pylab.loglog(mass,spectrum[:,0],'-')
       left = 10.**(pop.log10mass_bounds[:-1]+pop.delta_log10mass*bar_margin/2)
