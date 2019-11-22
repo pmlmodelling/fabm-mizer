@@ -25,7 +25,6 @@ module mizer_size_structured_population
 !
 ! !USES:
    use fabm_types
-   use fabm_builtin_models, only: copy_horizontal_fluxes
 
    implicit none
 
@@ -38,6 +37,14 @@ module mizer_size_structured_population
       type (type_horizontal_diagnostic_variable_id), allocatable :: id_concentration(:)
    contains
       procedure :: do_bottom => map_density_to_concentration_do_bottom
+   end type
+
+   type, extends(type_base_model), public :: type_apply_loss
+      type (type_horizontal_dependency_id), allocatable :: id_bottom_flux(:)
+      type (type_bottom_state_variable_id), allocatable :: id_density(:)
+      type (type_horizontal_diagnostic_variable_id), allocatable :: id_mortality(:)
+   contains
+      procedure :: do_bottom => apply_loss_do_bottom
    end type
 
    type, extends(type_base_model), public :: type_apply_bottom_flux_to_concentration
@@ -61,7 +68,6 @@ module mizer_size_structured_population
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_reproduction(:)    ! Reproduction per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_f(:)               ! Functional response per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_g(:)               ! Specific growth rate per size class
-      type (type_horizontal_diagnostic_variable_id),allocatable :: id_loss(:)            ! Loss rate per prey
       type (type_dependency_id)                                 :: id_T                  ! Temperature
       type (type_horizontal_dependency_id)                      :: id_depth              ! Predator-prey interaction depth
 
@@ -142,6 +148,7 @@ contains
    real(rk),parameter :: pi = 4*atan(1.0_rk)
    real(rk),parameter :: sec_per_year = 86400*365.2425_rk
    class(type_map_density_to_concentration),       pointer :: scale_state
+   class(type_apply_loss),                         pointer :: loss_copier
    class(type_apply_bottom_flux_to_concentration), pointer :: scale_rate
    logical, parameter :: report_statistics = .false.
 !EOP
@@ -320,15 +327,19 @@ contains
    call scale_state%register_dependency(scale_state%id_depth, 'interaction_depth', 'm', 'predator-prey interaction depth')
    call scale_state%request_coupling(scale_state%id_depth, '../interaction_depth')
 
+   allocate(loss_copier)
+   call scale_state%add_child(loss_copier, 'flux_copier', configunit=-1)
+   allocate(loss_copier%id_density(self%nclass))
+   allocate(loss_copier%id_bottom_flux(self%nclass))
+   allocate(loss_copier%id_mortality(self%nclass))
+
    ! Register dependencies for all prey.
    ! If the population is cannibalistic, automatically add all our size classes to the set of prey types.
    if (cannibalism) self%nprey = self%nprey + self%nclass
    allocate(self%id_Nw_prey(self%nprey))
-   allocate(self%id_loss(self%nprey))
-   do iprey=1,self%nprey
+   do iprey = 1, self%nprey
       write (strindex,'(i0)') iprey
       call self%register_bottom_state_dependency(self%id_Nw_prey(iprey),'Nw_prey'//trim(strindex),'g m-3','biomass of prey '//trim(strindex))
-      call self%register_diagnostic_variable(self%id_loss(iprey), 'loss'//trim(strindex), 'd-1', 'specific loss of prey '//trim(strindex), source=source_do_bottom)
       if (iprey <= self%nprey - self%nclass .or. .not. cannibalism) then
          ! Pelagic prey (not one of our own size classes) - we need to convert the bottom flux of biomass into a change in concentration (= divide by depth)
          call scale_rate%register_dependency(scale_rate%id_bottom_flux(iprey), 'bottom_flux'//trim(strindex), 'g m-2 s-1', 'bottom flux of prey '//trim(strindex))
@@ -364,7 +375,11 @@ contains
       call self%set_variable_property(scale_state%id_concentration(iclass), 'particle_mass', self%w(iclass))
 
       ! Apply bottom flux (g m-2 s-1) to original biomass density
-      call copy_horizontal_fluxes(scale_state, scale_state%id_concentration(iclass), '../Nw'//trim(strindex))
+      call loss_copier%register_state_dependency(loss_copier%id_density(iclass), 'bm'//trim(strindex), 'g m-2', 'biomass '//trim(strindex))
+      call loss_copier%request_coupling(loss_copier%id_density(iclass), '../../Nw'//trim(strindex))
+      call loss_copier%register_dependency(loss_copier%id_bottom_flux(iclass), 'bottom_flux'//trim(strindex), 'g m-2 s-1', 'biomass '//trim(strindex))
+      call loss_copier%request_coupling(loss_copier%id_bottom_flux(iclass), '../c'//trim(strindex)//'_sms_tot')
+      call loss_copier%register_diagnostic_variable(loss_copier%id_mortality(iclass), 'loss'//trim(strindex), 'd-1', 'mortality '//trim(strindex))
 
       ! If population is cannibalistic, add this size class as one of the prey (after the user-specified prey set).
       if (cannibalism) then
@@ -562,7 +577,6 @@ contains
          ! This is represented as a bottom flux for prey concentration (g m-2 s-1)
          do iprey = 1, self%nprey
             _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey), -prey_loss(iprey) * Nw_prey(iprey))
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_loss(iprey), prey_loss(iprey) * 86400)
          end do
 
          ! Transfer size-class-specific source terms and diagnostics to FABM
@@ -592,7 +606,7 @@ contains
 
       _HORIZONTAL_LOOP_BEGIN_
          _GET_HORIZONTAL_(self%id_depth, depth)
-         do iclass=1,size(self%id_density)
+         do iclass = 1, size(self%id_density)
             _GET_HORIZONTAL_(self%id_density(iclass), density)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_concentration(iclass), density / depth)
          end do
@@ -608,9 +622,26 @@ contains
 
       _HORIZONTAL_LOOP_BEGIN_
          _GET_HORIZONTAL_(self%id_depth, depth)
-         do iclass=1,size(self%id_concentration)
+         do iclass = 1, size(self%id_concentration)
             _GET_HORIZONTAL_(self%id_bottom_flux(iclass), bottom_flux)
             _SET_BOTTOM_ODE_(self%id_concentration(iclass), bottom_flux / depth)
+         end do
+      _HORIZONTAL_LOOP_END_
+   end subroutine
+
+   subroutine apply_loss_do_bottom(self,_ARGUMENTS_DO_BOTTOM_)
+      class (type_apply_loss), intent(in) :: self
+      _DECLARE_ARGUMENTS_DO_BOTTOM_
+
+      integer :: iclass
+      real(rk) :: bottom_flux, density
+
+      _HORIZONTAL_LOOP_BEGIN_
+         do iclass = 1, size(self%id_density)
+            _GET_HORIZONTAL_(self%id_bottom_flux(iclass), bottom_flux)
+            _GET_HORIZONTAL_(self%id_density(iclass), density)
+            _SET_BOTTOM_ODE_(self%id_density(iclass), bottom_flux)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_mortality(iclass), -86400 * bottom_flux / (density + tiny(density)))
          end do
       _HORIZONTAL_LOOP_END_
    end subroutine

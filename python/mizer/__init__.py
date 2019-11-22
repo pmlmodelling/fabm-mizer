@@ -193,7 +193,7 @@ class Mizer(object):
             initial_state = self.initial_state
 
         if save_loss_rates:
-            diagnostics = diagnostics + tuple(['fish/loss%i' % (self.prey_indices.size + i + 1) for i in range(self.bin_masses.size)])
+            diagnostics = diagnostics + tuple(['fish/biomass_as_prey/flux_copier/loss%i' % (i + 1,) for i in range(self.bin_masses.size)])
         diagvar = tuple([self.fabm_model.findDiagnosticVariable(name) for name in diagnostics])
 
         # Shortcuts to objects used during time integration
@@ -370,7 +370,7 @@ class MizerResult(object):
 
     def get_loss_rates(self):
         nprey = self.model.prey_indices.size
-        return numpy.stack([self.diagnostics['fish/loss%i' % (nprey + i + 1)] for i in range(self.spectrum.shape[1])], axis=1)
+        return numpy.stack([self.diagnostics['fish/biomass_as_prey/flux_copier/loss%i' % (i + 1,)] for i in range(self.spectrum.shape[1])], axis=1)
 
     def plot_spectrum(self, itime=-1, fig=None, normalization=0, global_range=False):
         if fig is None:
@@ -436,7 +436,7 @@ class MizerResult(object):
         ax = fig.gca()
         line, = ax.plot_date(self.t, self.get_lfi_timeseries(lfi_weight, min_weight), '-')
         ax.set_xlabel('time (d)')
-        ax.set_ylabel('fraction of popluation > %s g WM' % lfi_weight)
+        ax.set_ylabel('fraction of population > %s g WM' % lfi_weight)
         ax.grid(True)
         return line,
 
