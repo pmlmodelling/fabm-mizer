@@ -29,7 +29,7 @@ class Constant(ValueProvider):
         return self.value
 
 class TimeSeries(ValueProvider):
-    def __init__(self, path, variable_name, scale_factor=1.0, time_name='time', stop=None, minimum=None, maximum=None, **dim2index):
+    def __init__(self, path, variable_name, scale_factor=1.0, time_name='time', stop=None, minimum=None, maximum=None, allow_mask=False, **dim2index):
         ValueProvider.__init__(self)
 
         print('Reading %s from %s' % (variable_name, os.path.relpath(path)))
@@ -45,9 +45,10 @@ class TimeSeries(ValueProvider):
                     location.append('%s=:' % (dim,))
             print('  %s [%s]' % (ncvar.name, ', '.join(location)))
             vardata = ncvar[slc]
-            mask = numpy.ma.getmask(vardata)
-            assert not mask.any(), 'Variable %s in %s contains %i masked values (out of %i). Data: %s. First problem time: %s' % (path, ncvar.name, mask.sum(), mask.size, vardata, num2date(self.times[mask.nonzero()[0][0]]))
-            valid = numpy.isfinite(vardata)
+            if not allow_mask:
+                mask = numpy.ma.getmask(vardata)
+                assert not mask.any(), 'Variable %s in %s contains %i masked values (out of %i). Data: %s. First problem time: %s' % (path, ncvar.name, mask.sum(), mask.size, vardata, num2date(self.times[mask.nonzero()[0][0]]))
+            valid = numpy.isfinite(numpy.ma.filled(vardata, 0.))
             assert valid.all(), 'Variable %s in %s contains non-finite values (NaN?). Data: %s. First problem time: %s' % (path, ncvar.name, vardata, num2date(self.times[numpy.logical_not(valid)][0]))
             return final_dims, vardata
 
@@ -83,9 +84,17 @@ class TimeSeries(ValueProvider):
                 self.long_name = variable_name
                 self.units = 'unknown'
                 dimensions = (time_name,)
-            assert self.data.shape == self.times.shape, 'Unexpected shape for %s: got %s, expected %s' % (variable_name, self.data.shape, self.times.shape)
+            assert self.data.shape == timedata.shape, 'Unexpected shape for %s: got %s, expected %s' % (variable_name, self.data.shape, timedata.shape)
             if scale_factor != 1.0:
                 self.units = '%s*%s' % (scale_factor, self.units)
+            if allow_mask:
+                mask = numpy.ma.getmaskarray(self.data)
+                timedata = timedata[numpy.logical_not(mask)]
+                self.data = self.data.compressed()
+                assert timedata.shape == self.data.shape
+
+            self.times = date2num(netCDF4.num2date(timedata, nctime.units))
+
         valid = numpy.isfinite(self.data)
         assert valid.all(), 'Variable %s in %s contains non-finite values (NaN?). Data: %s. First problem time: %s' % (path, variable_name, self.data, num2date(self.times[numpy.logical_not(valid)][0]))
         minval, maxval = self.data.min(), self.data.max()
