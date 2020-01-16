@@ -65,8 +65,8 @@ class TimeSeries(ValueProvider):
                 ncvar = nc.variables[variable_name]
                 dimensions, self.data = getData(ncvar)
                 self.data *= scale_factor
-                self.long_name = ncvar.long_name
-                self.units = ncvar.units
+                self.long_name = getattr(ncvar, 'long_name', variable_name)
+                self.units = getattr(ncvar, 'ncvar.units', '')
             else:
                 class NcDict(object):
                     def __init__(self, nc):
@@ -123,7 +123,7 @@ class Climatology(ValueProvider):
         self.data = numpy.zeros(self.times.shape, dtype=float)
         count = numpy.zeros(self.data.shape, dtype=int)
         missing_value = timeseries.data.min() - 1.
-        for iyear in xrange(num2date(timeseries.times[0]).year, num2date(timeseries.times[-1]).year+1):
+        for iyear in range(num2date(timeseries.times[0]).year, num2date(timeseries.times[-1]).year+1):
             start = date2num(datetime.datetime(iyear, 1, 1))
             stop = date2num(datetime.datetime(iyear+1, 1, 1))
             curtime = numpy.arange(start, start + self.times[-1] + 0.1, 1.)
