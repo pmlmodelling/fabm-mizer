@@ -8,6 +8,11 @@ module multi_element_support
 
    implicit none
 
+   private
+
+   ! From fabm_builtin_models:
+   public type_depth_integral, type_weighted_sum
+
    type,extends(type_particle_model),public :: type_depth_integrated_sink
       type (type_model_id) :: id_target
       type (type_horizontal_diagnostic_variable_id) :: id_c_int
