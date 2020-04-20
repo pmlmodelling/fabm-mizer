@@ -154,7 +154,7 @@ if __name__ == '__main__':
         with open(args.parameters, 'rU') as f:
             args.parameters = yaml.load(f)
 
-    if isinstance(args.ppservers, basestring):
+    if isinstance(args.ppservers, (str, u''.__class__)):
         match = re.match(r'(.*)\[(.*)\](.*)', args.ppservers)
         if match is not None:
             # Hostnames in PBS/SLURM notation, e.g., node[01-06]
