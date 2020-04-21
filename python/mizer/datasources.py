@@ -32,6 +32,7 @@ class TimeSeries(ValueProvider):
     def __init__(self, path, variable_name, scale_factor=1.0, time_name='time', stop=None, minimum=None, maximum=None, allow_mask=False, **dim2index):
         ValueProvider.__init__(self)
 
+        self.times = None
         print('Reading %s from %s' % (variable_name, os.path.relpath(path)))
         def getData(ncvar):
             final_dims, slc, location = [], [], []
@@ -47,9 +48,13 @@ class TimeSeries(ValueProvider):
             vardata = ncvar[slc]
             if not allow_mask:
                 mask = numpy.ma.getmask(vardata)
-                assert not mask.any(), 'Variable %s in %s contains %i masked values (out of %i). Data: %s. First problem time: %s' % (path, ncvar.name, mask.sum(), mask.size, vardata, num2date(self.times[mask.nonzero()[0][0]]))
+                if mask.any():
+                    first_bad_time = 'unknown' if self.times is None else num2date(self.times[mask.nonzero()[0][0]])
+                    raise Exception('Variable %s in %s contains %i masked values (out of %i). Data: %s. First problem time: %s' % (path, ncvar.name, mask.sum(), mask.size, vardata, first_bad_time))
             valid = numpy.isfinite(numpy.ma.filled(vardata, 0.))
-            assert valid.all(), 'Variable %s in %s contains non-finite values (NaN?). Data: %s. First problem time: %s' % (path, ncvar.name, vardata, num2date(self.times[numpy.logical_not(valid)][0]))
+            if not valid.all():
+                first_bad_time = 'unknown' if self.times is None else num2date(self.times[numpy.logical_not(valid)][0])
+                raise Exception('Variable %s in %s contains %i non-finite values (NaN?). Data: %s. First problem time: %s' % (path, ncvar.name, valid.size - valid.sum(), vardata, first_bad_time))
             return final_dims, vardata
 
         with netCDF4.Dataset(path) as nc:
