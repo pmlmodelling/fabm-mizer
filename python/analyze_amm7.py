@@ -55,7 +55,7 @@ parameters = {
     'E_a': 0.63,
     'beta': 100,
     'sigma': float(numpy.log(10.)),   # paper has log10 units, we use ln units
-    'gamma': 365., # QuestFish paper=64. times kappa=0.5; Faking giants paper gives approx 1 m3/d at 13 degrees, i.e., 365 m3/yr for a fish of 1 g. For 1 fish of 1 g per m3 the specific clearance rate is therefore 365 yr-1
+    'gamma': 156, # clearance in m3/yr for single individual of mass 1 g. Blanchard et al 2009: 640 m3/yr; Blanchard et al 2012: 64 ?UNITS? [times kappa=0.5 for time spent in pelagic]; Faking giants paper gives 10^14.076 * W^0.926 * exp(-Ea/(kT) L d-1, which is 428 L d-1 = 156 m3 yr-1
     'q': 0.82,
     'alpha': 0.2,
     'z0_type': 1,
@@ -67,8 +67,9 @@ parameters = {
     'SRR': 0,
     'recruitment': 0.,
     'h': 1e9,
+    'fishing_type': 1,
     'w_minF': 1.25, # Blanchard et al 2012
-    'F': 0.8  # note: need to put double the intended value due to fisheries equation!
+    'F': 0.4
 }
 
 def addVariable(nc, name, long_name, units, data=None, dimensions=None, zlib=False, contiguous=True):
