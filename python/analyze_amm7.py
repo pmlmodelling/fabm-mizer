@@ -94,7 +94,19 @@ def addVariable(nc, name, long_name, units, data=None, dimensions=None, zlib=Fal
         ncvar[...] = data
     ncvar.long_name = long_name
     ncvar.units = units
+    if 'x' in dimensions and 'y' in dimensions and 'nav_lon' in nc.variables and 'nav_lat' in nc.variables:
+       ncvar.coordinates = 'nav_lon nav_lat'
     return ncvar
+
+def copyVariable(nc, ncvar, **kwargs):
+   ncvar_out = nc.createVariable(ncvar.name, ncvar.dtype, ncvar.dimensions, fill_value=getattr(ncvar, '_FillValue', None), **kwargs)
+   for key in ncvar.ncattrs():
+      if key != '_FillValue':
+         setattr(ncvar_out, key, getattr(ncvar, key))
+   if 'x' in ncvar.dimensions and 'y' in ncvar.dimensions and 'nav_lon' in nc.variables and 'nav_lat' in nc.variables:
+      ncvar_out.coordinates = 'nav_lon nav_lat'
+   ncvar_out[...] = ncvar[...]
+   return ncvar_out
 
 def processLocation(args):
     path, i, j = args
@@ -116,7 +128,7 @@ def processLocation(args):
     #temp = 12.
 
     # create mizer model
-    m = mizer.Mizer(prey=prey_collection, parameters=parameters, temperature=temp, recruitment_from_prey=True, depth=depth)
+    m = mizer.Mizer(prey=prey_collection, parameters=parameters, temperature=temp, recruitment_from_prey=1, depth=depth)
 
     # Time-integrate
     spinup = 50
@@ -163,11 +175,14 @@ if __name__ == '__main__':
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--parameters', default=None)
     parser.add_argument('--ifirst', type=int, default=None)
+    parser.add_argument('--shm', action='store_true')
+    parser.add_argument('--profile', action='store_true')
     args = parser.parse_args()
 
     if args.parameters is not None:
         with open(args.parameters, 'rU') as f:
             args.parameters = yaml.load(f)
+        parameters = args.parameters
 
     if isinstance(args.ppservers, (str, u''.__class__)):
         match = re.match(r'(.*)\[(.*)\](.*)', args.ppservers)
@@ -195,7 +210,10 @@ if __name__ == '__main__':
     tasks = []
     if not os.path.isdir(args.output_path):
        os.mkdir(args.output_path)
-    for path in glob.glob(args.source_path):
+    paths = glob.glob(args.source_path)
+    assert len(paths) > 0, 'no files found at %s' % args.source_path
+    for path in paths:
+        print('Opening %s...' % path)
         with netCDF4.Dataset(path) as nc:
             if 'mask' in nc.variables:
                 mask = nc.variables['mask'][...] > 0
@@ -228,9 +246,9 @@ if __name__ == '__main__':
                 nctime_out.units = nctime_in.units
                 dates = [dt.replace(tzinfo=None) for dt in num2date(times)]
                 nctime_out[...] = netCDF4.date2num(dates, nctime_out.units)
-                for name in ('nav_lon', 'nav_lat'):
-                   ncvar_in = nc.variables[name]
-                   addVariable(ncout, ncvar_in.name, ncvar_in.long_name, ncvar_in.units, dimensions=ncvar_in.dimensions, data=ncvar_in[...], zlib=compress, contiguous=contiguous, dtype=ncvar_in.dtype)
+                if 'nav_lon' in nc.variables:
+                    copyVariable(ncout, nc.variables['nav_lon'], zlib=compress)
+                    copyVariable(ncout, nc.variables['nav_lat'], zlib=compress)
                 vardict = {}
                 vardict['mask'] = ncout.createVariable('mask', 'i1', ('y', 'x'), zlib=compress, contiguous=contiguous)
                 vardict['mask'][...] = 0
@@ -267,14 +285,17 @@ if __name__ == '__main__':
     job_server = None
     final_output_path = None
     if args.method == 'serial':
-        import cProfile
-        import pstats
         def runSerial(n):
             for i in range(n):
                 saveResult(processLocation(tasks[i]))
-        cProfile.run('runSerial(3)', 'mizerprof')
-        p = pstats.Stats('mizerprof')
-        p.strip_dirs().sort_stats('cumulative').print_stats()
+        if args.profile:
+            import cProfile
+            import pstats
+            cProfile.run('runSerial(%s)' % min(len(tasks), 3), 'mizerprof')
+            p = pstats.Stats('mizerprof')
+            p.strip_dirs().sort_stats('cumulative').print_stats()
+        else:
+            runSerial(min(len(tasks), 3))
     elif args.method == 'multiprocessing':
         # Process all EEZs using all available cores
         # Kill child process after processing a single EEZ (maxtasksperchild=1) to prevent ever increasing memory consumption.
@@ -295,8 +316,9 @@ if __name__ == '__main__':
             import logging
             logging.basicConfig( level=logging.DEBUG)
         import pp
-        #final_output_path = args.output_path
-        #args.output_path = '/dev/shm'
+        if args.shm:
+            final_output_path = args.output_path
+            args.output_path = '/dev/shm'
         job_server = pp.Server(ncpus=args.ncpus, ppservers=ppservers, restart=True, secret=args.secret)
         jobs = []
         for task in tasks:
@@ -319,7 +341,7 @@ if __name__ == '__main__':
             ijob += 1
         print('%i tasks out of %i FAILED.' % (nfailed, len(tasks)))
         job_server.print_stats()
-
+ 
     for source, nc in source2output.items():
         name = os.path.basename(source)
         print('Closing %s...' % os.path.join(args.output_path, name))
