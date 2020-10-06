@@ -260,6 +260,7 @@ if __name__ == '__main__':
                 if add_biomass_per_bin:
                     ncout.createDimension('bin', nbins)
                     vardict['Nw'] = addVariable(ncout, 'Nw', 'biomass per bin', 'g WM/m2', dimensions=(time_name, 'y', 'x', 'bin'), zlib=compress, contiguous=contiguous)
+                    vardict['Nw_final'] = addVariable(ncout, 'Nw_final', 'final biomass per bin', 'g WM/m2', dimensions=('y', 'x', 'bin'), zlib=compress, contiguous=contiguous)
                 print('done')
            source2output[source] = ncout
            source2vars[source] = vardict
@@ -277,6 +278,7 @@ if __name__ == '__main__':
         vardict['mask'][j, i] = 1
         if add_biomass_per_bin:
            vardict['Nw'][:, j, i, :] = spectrum
+           vardict['Nw_final'][j, i, :] = spectrum[-1, :]
         if sync:
            print('Synchronizing NetCDF output to disk...', end='')
            ncout.sync()
