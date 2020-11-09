@@ -157,7 +157,7 @@ def processLocation(args):
     lfi10000 = result.get_lfi_timeseries(10000.)
     landings[1:] = landings[1:] - landings[:-1]
     landings[0] = 0
-    return path, i, j, times, biomass, landings, lfi80, lfi500, lfi10000, result.spectrum
+    return path, i, j, times, biomass, landings, lfi80, lfi500, lfi10000, m.bin_masses, result.spectrum
 
 def ppProcessLocation(args, p):
     import analyze_amm7
@@ -228,7 +228,7 @@ if __name__ == '__main__':
 
     source2output = {}
     source2vars = {}
-    def getOutput(source, times, nbins, compress=False, add_biomass_per_bin=False, contiguous=False):
+    def getOutput(source, times, w, compress=False, add_biomass_per_bin=False, contiguous=False):
         if source not in source2output:
            output_path = os.path.join(args.output_path, os.path.basename(source))
            if args.ifirst is not None:
@@ -258,7 +258,8 @@ if __name__ == '__main__':
                 vardict['lfi500'] = addVariable(ncout, 'lfi500', 'fraction of fish > 500 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
                 vardict['lfi10000'] = addVariable(ncout, 'lfi10000', 'fraction of fish > 10000 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
                 if add_biomass_per_bin:
-                    ncout.createDimension('bin', nbins)
+                    ncout.createDimension('bin', w.size)
+                    addVariable(ncout, 'w', 'individual mass', 'g WM', dimensions=('bin',), zlib=compress)[:] = w
                     vardict['Nw'] = addVariable(ncout, 'Nw', 'biomass per bin', 'g WM/m2', dimensions=(time_name, 'y', 'x', 'bin'), zlib=compress, contiguous=contiguous)
                     vardict['Nw_final'] = addVariable(ncout, 'Nw_final', 'final biomass per bin', 'g WM/m2', dimensions=('y', 'x', 'bin'), zlib=compress, contiguous=contiguous)
                 print('done')
@@ -267,8 +268,8 @@ if __name__ == '__main__':
         return source2output[source], source2vars[source]
 
     def saveResult(result, sync=True, add_biomass_per_bin=False):
-        source, i, j, times, biomass, landings, lfi80, lfi500, lfi10000, spectrum = result
-        ncout, vardict = getOutput(source, times, spectrum.shape[1], add_biomass_per_bin=add_biomass_per_bin)
+        source, i, j, times, biomass, landings, lfi80, lfi500, lfi10000, w, spectrum = result
+        ncout, vardict = getOutput(source, times, w, add_biomass_per_bin=add_biomass_per_bin)
         print('saving results from %s, i=%i, j=%i (mean biomass = %.3g)' % (source, i, j, biomass.mean()))
         vardict['biomass'][:, j, i] = biomass
         vardict['landings'][:, j, i] = landings
