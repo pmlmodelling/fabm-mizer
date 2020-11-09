@@ -68,7 +68,7 @@ module mizer_multi_element_population
       type (type_horizontal_diagnostic_variable_id)             :: id_T_ave
       type (type_horizontal_diagnostic_variable_id)             :: id_c_tot
       type (type_horizontal_diagnostic_variable_id)             :: id_c_small
-      real(rk)                                                  :: w_threshold = 10
+      real(rk)                                                  :: w_threshold
 
       ! Number of size classes and prey
       integer :: nclass
@@ -187,6 +187,7 @@ contains
    call self%get_parameter(z_spre,     'z_spre', 'yr-1', 'pre-factor for senescence mortality (= mortality at w_s g)',default=0.2_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    call self%get_parameter(w_mat,      'w_mat',  'g',    'maturation mass', default=0.0_rk, minimum=0.0_rk)
    call self%get_parameter(w_inf,      'w_inf',  'g',    'asymptotic mass', default=1e3_rk, minimum=0.0_rk)
+   call self%get_parameter(w_threshold,'w_threshold','g','mass separating small and large individuals (for diagnostic output only)', default=10._rk, minimum=0.0_rk)
    call self%get_parameter(self%beta,  'beta',   '-',    'preferred predator:prey mass ratio', default=100.0_rk, minimum=0.0_rk)
    call self%get_parameter(self%sigma, 'sigma',  '-',    'width of prey size preference (sd in ln mass units)', default=1.0_rk, minimum=0.0_rk)
    call self%get_parameter(self%xi,    'xi',     '-',    'fraction of mass consisting of lipid reserve', default=0.1_rk, minimum=0.0_rk, maximum=1.0_rk)
