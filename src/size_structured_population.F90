@@ -1,14 +1,7 @@
 #include "fabm_driver.h"
 
-!-----------------------------------------------------------------------
-!BOP
-!
-! !MODULE: mizer
-!
-! !INTERFACE:
 module mizer_size_structured_population
-!
-! !DESCRIPTION:
+
 ! Size-structured population for 2D fauna (e.g., depth-integrated fish or benthic fauna), based on:
 !
 ! Blanchard, J. L., Andersen, K. H., Scott, F., Hintzen, N. T., Piet, G., & Jennings, S. (2014)
@@ -22,43 +15,16 @@ module mizer_size_structured_population
 ! as in Sheldon's original postulate. This quantity can be converted to a biomass density (g g-1) by dividing
 ! by the bin width (in g), and to abundance density (# g-1) by further dividing by the individual biomass (g)
 ! at the centre of the bin. Note that each division roughly corresponds to a decrease of 1 in spectrum slope.
-!
-! !USES:
+
    use fabm_types
+   use size_structured_base
 
    implicit none
 
-!  default: all is private.
    private
 
-   type, extends(type_base_model), public :: type_map_density_to_concentration
-      type (type_horizontal_dependency_id),          allocatable :: id_density(:)
-      type (type_horizontal_dependency_id)                       :: id_depth
-      type (type_horizontal_diagnostic_variable_id), allocatable :: id_concentration(:)
-   contains
-      procedure :: do_bottom => map_density_to_concentration_do_bottom
-   end type
-
-   type, extends(type_base_model), public :: type_apply_loss
-      type (type_horizontal_dependency_id), allocatable :: id_bottom_flux(:)
-      type (type_bottom_state_variable_id), allocatable :: id_density(:)
-      type (type_horizontal_diagnostic_variable_id), allocatable :: id_mortality(:)
-   contains
-      procedure :: do_bottom => apply_loss_do_bottom
-   end type
-
-   type, extends(type_base_model), public :: type_apply_bottom_flux_to_concentration
-      type (type_horizontal_dependency_id), allocatable :: id_bottom_flux(:)
-      type (type_horizontal_dependency_id)              :: id_depth
-      type (type_bottom_state_variable_id), allocatable :: id_concentration(:)
-   contains
-      procedure :: do_bottom => apply_bottom_flux_to_concentration_do_bottom
-   end type
-!
-! !PUBLIC DERIVED TYPES:
-   type, extends(type_base_model), public :: type_size_structured_population
+   type, extends(type_size_structured_base), public :: type_size_structured_population
       ! Variable identifiers
-      type (type_bottom_state_variable_id),         allocatable :: id_Nw(:)              ! Total mass per size class (sum over all individuals)
       type (type_bottom_state_variable_id),         allocatable :: id_Nw_prey(:)         ! Total mass per prey (sum over all individuals)
       type (type_bottom_state_variable_id)                      :: id_waste              ! State variable that will serve as sink for all waste
       type (type_bottom_state_variable_id)                      :: id_landings           ! State variable that will serve as sink for all landed biomass
@@ -69,16 +35,9 @@ module mizer_size_structured_population
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_f(:)               ! Functional response per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_g(:)               ! Specific growth rate per size class
       type (type_dependency_id)                                 :: id_T                  ! Temperature
-      type (type_horizontal_dependency_id)                      :: id_depth              ! Predator-prey interaction depth
 
       ! Number of size classes and prey
-      integer :: nclass
       integer :: nprey
-
-      ! Size class characteristics
-      real(rk),allocatable :: logw(:)     ! log mass
-      real(rk),allocatable :: w(:)        ! mass
-      real(rk),allocatable :: delta_w(:)  ! mass difference between consecutive size classes
 
       ! Size-class-independent parameters
       real(rk) :: w_min       ! egg mass
@@ -109,9 +68,6 @@ module mizer_size_structured_population
       procedure :: do_bottom
       procedure :: after_coupling
    end type type_size_structured_population
-
-   ! Standard variable ("total mass") used for mass conservation checking
-   type (type_bulk_standard_variable),parameter :: total_mass = type_bulk_standard_variable(name='total_mass',units='g',aggregate_variable=.true.,conserved=.true.)
 
    real(rk) :: Kelvin = 273.15_rk      ! offset of Celsius temperature scale (K)
    real(rk) :: Boltzmann = 8.62e-5_rk  ! Boltzmann constant
@@ -147,9 +103,6 @@ contains
    character(len=10)  :: strindex
    real(rk),parameter :: pi = 4*atan(1.0_rk)
    real(rk),parameter :: sec_per_year = 86400*365.2425_rk
-   class(type_map_density_to_concentration),       pointer :: scale_state
-   class(type_apply_loss),                         pointer :: loss_copier
-   class(type_apply_bottom_flux_to_concentration), pointer :: scale_rate
    logical, parameter :: report_statistics = .false.
 !EOP
 !-----------------------------------------------------------------------
@@ -214,16 +167,7 @@ contains
 
    call self%get_parameter(z0, 'z0', 'yr-1', 'background mortality', minimum=0.0_rk, default=z0pre*w_inf**z0exp*sec_per_year, scale_factor=1._rk/sec_per_year)
 
-   ! Determine size classes (log-spaced between size at birth and infinite size)
-   allocate(self%logw(self%nclass))
-   allocate(self%w(self%nclass))
-   allocate(self%delta_w(self%nclass))
-   delta_logw = (log(w_inf) - log(self%w_min)) / self%nclass               ! Log-mass distance between size classes [constant across spectrum]
-   do iclass = 1, self%nclass
-      self%logw(iclass) = log(self%w_min) + delta_logw * (iclass - 0.5_rk) ! Log mass of each size class
-   end do
-   self%w = exp(self%logw)                                                 ! Mass of each size class
-   self%delta_w = exp(self%logw + delta_logw) - self%w                     ! Mass difference between consecutive size classes
+   call self%configure(self%nclass, self%w_min, w_inf)
 
    ! Compute size-class-specific parameters that do not vary in time. It is most efficient to compute these once, during initialization.
    allocate(self%I_max(self%nclass))
@@ -311,75 +255,22 @@ contains
       write (*,*) 'Fishing mortality at maximum size:',self%F(self%nclass)*sec_per_year,'yr-1'
    end if
 
-   ! Set up submodel that translates the bottom flux of prey (g m-2 s-1) to the change in concetration (often g m-3 s-1)
-   allocate(scale_rate)
-   call self%add_child(scale_rate, 'prey_bottom_flux_converter', configunit=-1)
-   allocate(scale_rate%id_bottom_flux(self%nprey))
-   allocate(scale_rate%id_concentration(self%nprey))
-   call scale_rate%register_dependency(scale_rate%id_depth, 'interaction_depth', 'm', 'predator-prey interaction depth')
-   call scale_rate%request_coupling(scale_rate%id_depth, '../interaction_depth')
-
-   ! Set up submodel that calculates prey concentrations (g m-3) from internal biomass density (g m-2)
-   allocate(scale_state)
-   call self%add_child(scale_state, 'biomass_as_prey', configunit=-1)
-   allocate(scale_state%id_density(self%nclass))
-   allocate(scale_state%id_concentration(self%nclass))
-   call scale_state%register_dependency(scale_state%id_depth, 'interaction_depth', 'm', 'predator-prey interaction depth')
-   call scale_state%request_coupling(scale_state%id_depth, '../interaction_depth')
-
-   allocate(loss_copier)
-   call scale_state%add_child(loss_copier, 'flux_copier', configunit=-1)
-   allocate(loss_copier%id_density(self%nclass))
-   allocate(loss_copier%id_bottom_flux(self%nclass))
-   allocate(loss_copier%id_mortality(self%nclass))
-
    ! Register dependencies for all prey.
    ! If the population is cannibalistic, automatically add all our size classes to the set of prey types.
    if (cannibalism) self%nprey = self%nprey + self%nclass
    allocate(self%id_Nw_prey(self%nprey))
    do iprey = 1, self%nprey
       write (strindex,'(i0)') iprey
-      call self%register_bottom_state_dependency(self%id_Nw_prey(iprey),'Nw_prey'//trim(strindex),'g m-3','biomass of prey '//trim(strindex))
-      if (iprey <= self%nprey - self%nclass .or. .not. cannibalism) then
-         ! Pelagic prey (not one of our own size classes) - we need to convert the bottom flux of biomass into a change in concentration (= divide by depth)
-         call scale_rate%register_dependency(scale_rate%id_bottom_flux(iprey), 'bottom_flux'//trim(strindex), 'g m-2 s-1', 'bottom flux of prey '//trim(strindex))
-         call scale_rate%request_coupling(scale_rate%id_bottom_flux(iprey), 'biomass_as_prey/c'//trim(strindex)//'_sms_tot')
-         call scale_rate%register_state_dependency(scale_rate%id_concentration(iprey), 'Nw_prey'//trim(strindex), 'g m-3', 'biomass '//trim(strindex))
-         call scale_rate%request_coupling(scale_rate%id_concentration(iprey), '../Nw_prey'//trim(strindex))
-      end if
+      call self%register_bottom_state_dependency(self%id_Nw_prey(iprey), 'Nw_prey'//trim(strindex), 'g m-3', 'biomass of prey '//trim(strindex))
    end do
 
-   ! Depth over which predator-prey interact
-   ! If cannibalism is active, the fish per area will be divided by this depth to compute the prey concentration
-   call self%register_dependency(self%id_depth, 'interaction_depth', 'm', 'predator-prey interaction depth')
-
    ! Allocate size-class-specific identifiers for abundance state variable and diagnostics.
-   allocate(self%id_Nw(self%nclass))
    allocate(self%id_reproduction(self%nclass))
    allocate(self%id_f(self%nclass))
    allocate(self%id_g(self%nclass))
    do iclass=1,self%nclass
       ! Postfix for size-class-specific variable names (an integer number)
       write (strindex,'(i0)') iclass
-
-      ! Register state variable, store associated individual mass (used by predators, if any, to determine grazing preference).
-      call self%register_state_variable(self%id_Nw(iclass), 'Nw'//trim(strindex), 'g m-2', 'biomass in size class '//trim(strindex), 1.0_rk, minimum=0.0_rk)
-      call self%set_variable_property(self%id_Nw(iclass), 'particle_mass',self%w(iclass))
-
-      ! Register this size class' contribution to total mass in the system (for mass conservation checks)
-      call self%add_to_aggregate_variable(total_mass,self%id_Nw(iclass))
-
-      call scale_state%register_dependency(scale_state%id_density(iclass), 'bm'//trim(strindex), 'g m-2', 'biomass '//trim(strindex))
-      call scale_state%request_coupling(scale_state%id_density(iclass), '../Nw'//trim(strindex))
-      call scale_state%register_diagnostic_variable(scale_state%id_concentration(iclass), 'c'//trim(strindex), 'g m-3', 'biomass concentration', act_as_state_variable=.true., output=output_none, domain=domain_bottom)
-      call self%set_variable_property(scale_state%id_concentration(iclass), 'particle_mass', self%w(iclass))
-
-      ! Apply bottom flux (g m-2 s-1) to original biomass density
-      call loss_copier%register_state_dependency(loss_copier%id_density(iclass), 'bm'//trim(strindex), 'g m-2', 'biomass '//trim(strindex))
-      call loss_copier%request_coupling(loss_copier%id_density(iclass), '../../Nw'//trim(strindex))
-      call loss_copier%register_dependency(loss_copier%id_bottom_flux(iclass), 'bottom_flux'//trim(strindex), 'g m-2 s-1', 'biomass '//trim(strindex))
-      call loss_copier%request_coupling(loss_copier%id_bottom_flux(iclass), '../c'//trim(strindex)//'_sms_tot')
-      call loss_copier%register_diagnostic_variable(loss_copier%id_mortality(iclass), 'loss'//trim(strindex), 'd-1', 'mortality '//trim(strindex))
 
       ! If population is cannibalistic, add this size class as one of the prey (after the user-specified prey set).
       if (cannibalism) then
@@ -411,10 +302,10 @@ contains
    subroutine after_coupling(self)
       class (type_size_structured_population),intent(inout) :: self
 
-      integer           :: iprey, iclass, i
-      character(len=10) :: strindex
+      integer            :: iprey, iclass, i
+      character(len=10)  :: strindex
       integer, parameter :: n = 100
-      real(rk)          :: w_p, w_p_min, w_p_max, log_w_ps(n)
+      real(rk)           :: w_p, w_p_min, w_p_max, log_w_ps(n)
 
       ! Coupling with prey has completed.
       ! Now we can query all prey for their wet mass per individual. From that we precompute predator-prey preferences.
@@ -596,55 +487,6 @@ contains
       _HORIZONTAL_LOOP_END_
 
    end subroutine do_bottom
-
-   subroutine map_density_to_concentration_do_bottom(self,_ARGUMENTS_DO_BOTTOM_)
-      class (type_map_density_to_concentration), intent(in) :: self
-      _DECLARE_ARGUMENTS_DO_BOTTOM_
-
-      integer :: iclass
-      real(rk) :: depth, density
-
-      _HORIZONTAL_LOOP_BEGIN_
-         _GET_HORIZONTAL_(self%id_depth, depth)
-         do iclass = 1, size(self%id_density)
-            _GET_HORIZONTAL_(self%id_density(iclass), density)
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_concentration(iclass), density / depth)
-         end do
-      _HORIZONTAL_LOOP_END_
-   end subroutine
-
-   subroutine apply_bottom_flux_to_concentration_do_bottom(self,_ARGUMENTS_DO_BOTTOM_)
-      class (type_apply_bottom_flux_to_concentration), intent(in) :: self
-      _DECLARE_ARGUMENTS_DO_BOTTOM_
-
-      integer :: iclass
-      real(rk) :: depth, bottom_flux
-
-      _HORIZONTAL_LOOP_BEGIN_
-         _GET_HORIZONTAL_(self%id_depth, depth)
-         do iclass = 1, size(self%id_concentration)
-            _GET_HORIZONTAL_(self%id_bottom_flux(iclass), bottom_flux)
-            _SET_BOTTOM_ODE_(self%id_concentration(iclass), bottom_flux / depth)
-         end do
-      _HORIZONTAL_LOOP_END_
-   end subroutine
-
-   subroutine apply_loss_do_bottom(self,_ARGUMENTS_DO_BOTTOM_)
-      class (type_apply_loss), intent(in) :: self
-      _DECLARE_ARGUMENTS_DO_BOTTOM_
-
-      integer :: iclass
-      real(rk) :: bottom_flux, density
-
-      _HORIZONTAL_LOOP_BEGIN_
-         do iclass = 1, size(self%id_density)
-            _GET_HORIZONTAL_(self%id_bottom_flux(iclass), bottom_flux)
-            _GET_HORIZONTAL_(self%id_density(iclass), density)
-            _SET_BOTTOM_ODE_(self%id_density(iclass), bottom_flux)
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_mortality(iclass), -86400 * bottom_flux / (density + tiny(density)))
-         end do
-      _HORIZONTAL_LOOP_END_
-   end subroutine
 
 !-----------------------------------------------------------------------
 

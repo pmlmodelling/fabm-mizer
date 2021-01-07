@@ -29,7 +29,7 @@ class Constant(ValueProvider):
         return self.value
 
 class TimeSeries(ValueProvider):
-    def __init__(self, path, variable_name, scale_factor=1.0, time_name='time', stop=None, minimum=None, maximum=None, allow_mask=False, **dim2index):
+    def __init__(self, path, variable_name, scale_factor=1.0, time_name='time', stop=None, minimum=None, maximum=None, allow_mask=False, expressions={}, **dim2index):
         ValueProvider.__init__(self)
 
         self.times = None
@@ -78,6 +78,8 @@ class TimeSeries(ValueProvider):
                         self.nc = nc
                         self.cache = {}
                     def __getitem__(self, key):
+                        if key in expressions:
+                            return eval(expressions[key], {}, self)
                         if key not in self.cache:
                             ncvar = self.nc.variables[key]
                             final_dims, self.cache[key] = getData(ncvar)
