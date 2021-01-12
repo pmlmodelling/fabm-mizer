@@ -165,7 +165,11 @@ class Mizer(object):
         self.bin_widths = 10.**(log10masses+self.log10bin_width/2) - 10.**(log10masses-self.log10bin_width/2)
 
         # Used to convert between depth-integrated fluxes and depth-explicit fluxes (not used if prey is prescribed)
-        self.fabm_model.findDependency('bottom_depth').value = 1.
+        self.fabm_model.cell_thickness = 1.
+        try:
+            self.fabm_model.findDependency('bottom_depth').value = 1.
+        except KeyError:
+            pass
 
         if temperature is not None:
             self.temperature = self.fabm_model.findDependency('temperature')
