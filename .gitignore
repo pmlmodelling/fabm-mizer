@@ -3,3 +3,5 @@
 *.dump
 *.png
 *.pyc
+/build0d
+/build-python
