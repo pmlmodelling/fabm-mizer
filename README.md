@@ -1,7 +1,9 @@
-This is an implementation of [mizer](http://dx.doi.org/10.1111/2041-210X.12256) in [FABM](http://fabm.net).
+This is an implementation of [mizer](http://dx.doi.org/10.1111/2041-210X.12256) in [FABM](https://fabm.net).
 
 It contains separate modules for a single size-structured population ("size_structured_population") and a resource spectrum ("resource_spectrum").
-Multiple size-structured populations may be added to fabm.yaml to create a multi-species community.
+Multiple size-structured populations may be added to fabm.yaml to create a multi-species community. It also includes a multi-element version of
+the size structured population ("multi_element_mizer"), which explicitly treats carbon, nitrogen and phosphorus (plus, in prey, silicon). This can be coupled to
+element-resolving prey models such as ERSEM and ensures mass of all different elements is conserved.
 
 To include mizer modules during a FABM build, add the following to your call to CMake: `-DFABM_INSTITUTES="<OTHER_MODELS>;mizer" -DFABM_MIZER_BASE=<MIZERDIR>`.
 Here, `<OTHER_MODELS>` is a semi-colon-separated list of additional FABM packages you want to build, e.g., ersem (quotes are _required_ to prevent your shell (e.g., bash)
