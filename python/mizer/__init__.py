@@ -535,7 +535,7 @@ class MizerResult(object):
             nc.createDimension('bin', self.model.bin_masses.size)
             nctime = nc.createVariable('time', int, ('time',))
             nctime.units = 'seconds since %s' % num2date(self.t[0]).strftime('%Y-%m-%d %H:%M:%S')
-            nctime[:] = netCDF4.date2num(num2date(self.t), nctime.units)
+            nctime[:] = (self.t - self.t[0]) * 86400
             add_variable('w', 'g WM', 'individual mass', dimensions=('bin',))[:] = self.model.bin_masses
             if save_spectrum:
                 ncstate = add_variable('spectrum', 'g WM/m2', 'biomass per bin', dimensions=('time', 'bin'), coordinates='time w')
