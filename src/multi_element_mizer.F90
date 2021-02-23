@@ -98,6 +98,8 @@ module mizer_multi_element_population
       real(rk) :: c1           ! Reference constant in Arrhenius equation = E_a/k/(T_ref+Kelvin)
       real(rk) :: E_a          ! Activation energy (eV)
 
+      logical :: feedback
+
       ! Size-class-dependent parameters that will be precomputed during initialization
       real(rk), allocatable :: V(:)            ! volumetric search rate (Eq M2)
       real(rk), allocatable :: I_max(:)        ! maximum ingestion rate (Eq M4)
@@ -209,6 +211,8 @@ contains
    if (cannibalism) call self%get_parameter(biomass_has_prey_unit, 'biomass_has_prey_unit', '', 'biomass has the same unit as prey', default=.true.)
    call self%get_parameter(self%qnc,   'qnc',        'mol mol-1','nitrogen to carbon ratio', default=16.0_rk/106.0_rk)
    call self%get_parameter(self%qpc,   'qpc',        'mol mol-1','phosphorus to carbon ratio', default=1.0_rk/106.0_rk)
+
+   call self%get_parameter(self%feedback, 'feedback', '', 'feedback from fish to ecosystem (prey, waste, O2, CO2)', default=.true.)
 
    call self%get_parameter(self%T_dependence, 'T_dependence', '', 'temperature dependence (0: none, 1: Arrhenius)', default=0)
    select case (self%T_dependence)
@@ -718,11 +722,15 @@ contains
          ! Destroy all prey constituents that we are aware of (we only need to destroy carbon
          ! to get the correct impact on prey, but by destroying all we enable conservation checks)
          do iprey = 1, self%nprey
-            _SET_BOTTOM_ODE_(self%id_prey_c(iprey), -prey_loss(iprey)*prey_c(iprey))
-            if (iprey <= self%nprey - self%nclass .or. self%nprey == self%nclass) then
-            _SET_BOTTOM_ODE_(self%id_prey_n(iprey), -prey_loss(iprey)*prey_n(iprey))
-            _SET_BOTTOM_ODE_(self%id_prey_p(iprey), -prey_loss(iprey)*prey_p(iprey))
-            _SET_BOTTOM_ODE_(self%id_prey_s(iprey), -prey_loss(iprey)*prey_s(iprey))
+            if (iprey > self%nprey - self%nclass) then
+               ! Prey is one of our own size classes
+               _SET_BOTTOM_ODE_(self%id_prey_c(iprey), -prey_loss(iprey)*prey_c(iprey))
+            elseif (self%feedback) then
+               ! Prey is an external variable (not one of our size classes)
+               _SET_BOTTOM_ODE_(self%id_prey_c(iprey), -prey_loss(iprey)*prey_c(iprey))
+               _SET_BOTTOM_ODE_(self%id_prey_n(iprey), -prey_loss(iprey)*prey_n(iprey))
+               _SET_BOTTOM_ODE_(self%id_prey_p(iprey), -prey_loss(iprey)*prey_p(iprey))
+               _SET_BOTTOM_ODE_(self%id_prey_s(iprey), -prey_loss(iprey)*prey_s(iprey))
             end if
          end do
 
@@ -744,13 +752,15 @@ contains
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R,R*86400)
 
          ! Compute waste fluxes: total ingestion plus mortality, minus mass used in growth, minus recruitment, plus growth over right edge of resolved size range.
-         _SET_BOTTOM_ODE_(self%id_dic,(1-self%alpha-self%alpha_eg)*sum(I_c*Nw))
-         _SET_BOTTOM_ODE_(self%id_din,(1-self%alpha-self%alpha_eg)*sum(I_n*Nw))
-         _SET_BOTTOM_ODE_(self%id_dip,(1-self%alpha-self%alpha_eg)*sum(I_p*Nw))
-         _SET_BOTTOM_ODE_(self%id_waste_c,sum(((self%alpha+self%alpha_eg)*I_c +  mu - g/(1-self%psi)          )*Nw) - R*self%w_min/g_per_mmol_carbon          + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)
-         _SET_BOTTOM_ODE_(self%id_waste_n,sum(((self%alpha+self%alpha_eg)*I_n + (mu - g/(1-self%psi))*self%qnc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qnc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)
-         _SET_BOTTOM_ODE_(self%id_waste_p,sum(((self%alpha+self%alpha_eg)*I_p + (mu - g/(1-self%psi))*self%qpc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qpc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)
-         _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s*Nw))
+         if (self%feedback) then
+            _SET_BOTTOM_ODE_(self%id_dic,(1-self%alpha-self%alpha_eg)*sum(I_c*Nw))
+            _SET_BOTTOM_ODE_(self%id_din,(1-self%alpha-self%alpha_eg)*sum(I_n*Nw))
+            _SET_BOTTOM_ODE_(self%id_dip,(1-self%alpha-self%alpha_eg)*sum(I_p*Nw))
+            _SET_BOTTOM_ODE_(self%id_waste_c,sum(((self%alpha+self%alpha_eg)*I_c +  mu - g/(1-self%psi)          )*Nw) - R*self%w_min/g_per_mmol_carbon          + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)
+            _SET_BOTTOM_ODE_(self%id_waste_n,sum(((self%alpha+self%alpha_eg)*I_n + (mu - g/(1-self%psi))*self%qnc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qnc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)
+            _SET_BOTTOM_ODE_(self%id_waste_p,sum(((self%alpha+self%alpha_eg)*I_p + (mu - g/(1-self%psi))*self%qpc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qpc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)
+            _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s*Nw))
+         end if
          _SET_BOTTOM_ODE_(self%id_landings,sum(self%F*Nw*g_per_mmol_carbon))
       _HORIZONTAL_LOOP_END_
 
