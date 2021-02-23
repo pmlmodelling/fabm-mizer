@@ -115,56 +115,52 @@ module multi_element_support
 contains
 
    subroutine depth_averaged_class_initialize(self, configunit)
-!
-! !INPUT PARAMETERS:
-   class (type_depth_averaged_class), intent(inout), target :: self
-   integer,                           intent(in)            :: configunit
+      class (type_depth_averaged_class), intent(inout), target :: self
+      integer,                           intent(in)            :: configunit
 
-   call self%register_dependency(self%id_int_w, 'int_w', '', 'depth-integral of weight')
-   call self%register_dependency(self%id_int_w2, 'int_w2', '', 'depth-integral of squared weight')
-   call self%register_dependency(self%id_int_c, 'int_c', '', 'depth-integral of carbon')
-   call self%register_diagnostic_variable(self%id_c, 'c', 'mmol C/m^3', 'depth-averaged carbon', act_as_state_variable=.true., domain=domain_bottom, source=source_do_bottom, output=output_none)
-   call self%add_to_aggregate_variable(standard_variables%total_carbon,     self%id_c)
-   call self%add_to_aggregate_variable(standard_variables%total_nitrogen,   self%id_c, scale_factor=self%qnc)
-   call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_c, scale_factor=self%qpc)
-   call copy_horizontal_fluxes(self, self%id_c, './int_c')
-
+      call self%register_dependency(self%id_int_w, 'int_w', '', 'depth-integral of weight')
+      call self%register_dependency(self%id_int_w2, 'int_w2', '', 'depth-integral of squared weight')
+      call self%register_dependency(self%id_int_c, 'int_c', '', 'depth-integral of carbon')
+      call self%register_diagnostic_variable(self%id_c, 'c', 'mmol C/m^3', 'depth-averaged carbon', act_as_state_variable=.true., domain=domain_bottom, source=source_do_bottom, output=output_none)
+      call self%add_to_aggregate_variable(standard_variables%total_carbon,     self%id_c)
+      call self%add_to_aggregate_variable(standard_variables%total_nitrogen,   self%id_c, scale_factor=self%qnc)
+      call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_c, scale_factor=self%qpc)
+      call copy_horizontal_fluxes(self, self%id_c, './int_c')
    end subroutine depth_averaged_class_initialize
 
    subroutine depth_averaged_class_do_bottom(self, _ARGUMENTS_DO_BOTTOM_)
-    class (type_depth_averaged_class), intent(in) :: self
-    _DECLARE_ARGUMENTS_DO_BOTTOM_
+      class (type_depth_averaged_class), intent(in) :: self
+      _DECLARE_ARGUMENTS_DO_BOTTOM_
 
-    real(rk) :: int_w, int_w2, int_c
+      real(rk) :: int_w, int_w2, int_c
 
-    _HORIZONTAL_LOOP_BEGIN_
-      _GET_HORIZONTAL_(self%id_int_w, int_w)
-      _GET_HORIZONTAL_(self%id_int_w2, int_w2)
-      _GET_HORIZONTAL_(self%id_int_c, int_c)
-      _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c, int_c*int_w2/int_w/int_w)
-    _HORIZONTAL_LOOP_END_
+      _HORIZONTAL_LOOP_BEGIN_
+         _GET_HORIZONTAL_(self%id_int_w, int_w)
+         _GET_HORIZONTAL_(self%id_int_w2, int_w2)
+         _GET_HORIZONTAL_(self%id_int_c, int_c)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c, int_c*int_w2/int_w/int_w)
+      _HORIZONTAL_LOOP_END_
    end subroutine depth_averaged_class_do_bottom
 
    subroutine depth_integrated_sink_initialize(self, configunit)
-!
-! !INPUT PARAMETERS:
-   class (type_depth_integrated_sink), intent(inout), target :: self
-   integer,                            intent(in)            :: configunit
 
-   character(len=10) :: composition
+      class (type_depth_integrated_sink), intent(inout), target :: self
+      integer,                            intent(in)            :: configunit
 
-   call self%register_model_dependency(self%id_target, 'target')
-   call self%register_dependency(self%id_w, 'w', '', 'weights')
-   call self%register_dependency(self%id_w_int, 'w_int', '', 'depth integrated weights')
-   
-   call self%get_parameter(composition, 'composition', '', 'elemental composition')
-   if (index(composition, 'c') /= 0)  call add_constituent('c', 'mmol C', 'carbon', self%id_c_int, self%id_c, standard_variables%total_carbon)
-   if (index(composition, 'n') /= 0)  call add_constituent('n', 'mmol N', 'nitrogen', self%id_n_int, self%id_n, standard_variables%total_nitrogen)
-   if (index(composition, 'p') /= 0)  call add_constituent('p', 'mmol P', 'phosphorus', self%id_p_int, self%id_p, standard_variables%total_phosphorus)
-   if (index(composition, 's') /= 0)  call add_constituent('s', 'mmol Si', 'silicate', self%id_s_int, self%id_s, standard_variables%total_silicate)
+      character(len=10) :: composition
+
+      call self%register_model_dependency(self%id_target, 'target')
+      call self%register_dependency(self%id_w, 'w', '', 'weights')
+      call self%register_dependency(self%id_w_int, 'w_int', '', 'depth integrated weights')
+
+      call self%get_parameter(composition, 'composition', '', 'elemental composition')
+      if (index(composition, 'c') /= 0)  call add_constituent('c', 'mmol C', 'carbon', self%id_c_int, self%id_c, standard_variables%total_carbon)
+      if (index(composition, 'n') /= 0)  call add_constituent('n', 'mmol N', 'nitrogen', self%id_n_int, self%id_n, standard_variables%total_nitrogen)
+      if (index(composition, 'p') /= 0)  call add_constituent('p', 'mmol P', 'phosphorus', self%id_p_int, self%id_p, standard_variables%total_phosphorus)
+      if (index(composition, 's') /= 0)  call add_constituent('s', 'mmol Si', 'silicate', self%id_s_int, self%id_s, standard_variables%total_silicate)
 
    contains
-   
+
       subroutine add_constituent(name, units, long_name, id_int, id_pelstate, standard_variable)
          character(len=*), intent(in) :: name, units, long_name
          type (type_horizontal_diagnostic_variable_id), intent(inout), target :: id_int
@@ -253,28 +249,26 @@ contains
    end subroutine absolute_rate_distributor_do
 
    subroutine depth_averaged_prey_initialize(self, configunit)
-!
-! !INPUT PARAMETERS:
-   class (type_depth_averaged_prey), intent(inout), target :: self
-   integer,                          intent(in)            :: configunit
+      class (type_depth_averaged_prey), intent(inout), target :: self
+      integer,                          intent(in)            :: configunit
 
-   class (type_relative_rate_distributor), pointer :: rate_distributor
+      class (type_relative_rate_distributor), pointer :: rate_distributor
 
-   call self%register_model_dependency(name='source')
-   call self%register_dependency(self%id_w, 'w', '', 'weight')
-   call self%register_dependency(self%id_w_int, 'w_int', '', 'depth-integral of weight')
+      call self%register_model_dependency(name='source')
+      call self%register_dependency(self%id_w, 'w', '', 'weight')
+      call self%register_dependency(self%id_w_int, 'w_int', '', 'depth-integral of weight')
 
-   call add_constituent('c', 'mmol C', 'carbon', self%id_c_pel, self%id_int_c_w, self%id_c, standard_variables%total_carbon)
-   call add_constituent('n', 'mmol N', 'nitrogen', self%id_n_pel, self%id_int_n_w, self%id_n, standard_variables%total_nitrogen)
-   call add_constituent('p', 'mmol P', 'phosphorus', self%id_p_pel, self%id_int_p_w, self%id_p, standard_variables%total_phosphorus)
-   call add_constituent('s', 'mmol Si', 'silicate', self%id_s_pel, self%id_int_s_w, self%id_s, standard_variables%total_silicate)
+      call add_constituent('c', 'mmol C', 'carbon', self%id_c_pel, self%id_int_c_w, self%id_c, standard_variables%total_carbon)
+      call add_constituent('n', 'mmol N', 'nitrogen', self%id_n_pel, self%id_int_n_w, self%id_n, standard_variables%total_nitrogen)
+      call add_constituent('p', 'mmol P', 'phosphorus', self%id_p_pel, self%id_int_p_w, self%id_p, standard_variables%total_phosphorus)
+      call add_constituent('s', 'mmol Si', 'silicate', self%id_s_pel, self%id_int_s_w, self%id_s, standard_variables%total_silicate)
 
-   allocate(rate_distributor)
-   call self%add_child(rate_distributor, 'loss_distributor', configunit=-1)
-   call rate_distributor%request_coupling('w', '../w')
-   call rate_distributor%request_coupling('target_w_int', '../int_c_w')
-   call rate_distributor%request_coupling('sms_int', '../c_sms_tot')
-   call rate_distributor%couplings%set_string('target', '../source')
+      allocate(rate_distributor)
+      call self%add_child(rate_distributor, 'loss_distributor', configunit=-1)
+      call rate_distributor%request_coupling('w', '../w')
+      call rate_distributor%request_coupling('target_w_int', '../int_c_w')
+      call rate_distributor%request_coupling('sms_int', '../c_sms_tot')
+      call rate_distributor%couplings%set_string('target', '../source')
 
    contains
 
@@ -306,76 +300,69 @@ contains
 
          call self%register_diagnostic_variable(id_ave, name, units//'/m^3', 'depth-averaged '//long_name, act_as_state_variable=.true., domain=domain_bottom, source=source_do_bottom)
          call self%add_to_aggregate_variable(standard_variable, id_ave)
-
       end subroutine
 
    end subroutine depth_averaged_prey_initialize
 
    subroutine depth_averaged_prey_do_bottom(self, _ARGUMENTS_DO_BOTTOM_)
-    class (type_depth_averaged_prey), intent(in) :: self
-    _DECLARE_ARGUMENTS_DO_BOTTOM_
+      class (type_depth_averaged_prey), intent(in) :: self
+      _DECLARE_ARGUMENTS_DO_BOTTOM_
 
-    real(rk) :: c_w_int, n_w_int, p_w_int, s_w_int, w_int
+      real(rk) :: c_w_int, n_w_int, p_w_int, s_w_int, w_int
 
-    _HORIZONTAL_LOOP_BEGIN_
-        _GET_HORIZONTAL_(self%id_w_int, w_int)
-        _GET_HORIZONTAL_(self%id_int_c_w, c_w_int)
-        _GET_HORIZONTAL_(self%id_int_n_w, n_w_int)
-        _GET_HORIZONTAL_(self%id_int_p_w, p_w_int)
-        _GET_HORIZONTAL_(self%id_int_s_w, s_w_int)
-        _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c, c_w_int/w_int)
-        _SET_HORIZONTAL_DIAGNOSTIC_(self%id_n, n_w_int/w_int)
-        _SET_HORIZONTAL_DIAGNOSTIC_(self%id_p, p_w_int/w_int)
-        _SET_HORIZONTAL_DIAGNOSTIC_(self%id_s, s_w_int/w_int)
-    _HORIZONTAL_LOOP_END_
+      _HORIZONTAL_LOOP_BEGIN_
+         _GET_HORIZONTAL_(self%id_w_int, w_int)
+         _GET_HORIZONTAL_(self%id_int_c_w, c_w_int)
+         _GET_HORIZONTAL_(self%id_int_n_w, n_w_int)
+         _GET_HORIZONTAL_(self%id_int_p_w, p_w_int)
+         _GET_HORIZONTAL_(self%id_int_s_w, s_w_int)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c, c_w_int/w_int)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_n, n_w_int/w_int)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_p, p_w_int/w_int)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_s, s_w_int/w_int)
+      _HORIZONTAL_LOOP_END_
    end subroutine depth_averaged_prey_do_bottom
 
    subroutine square_initialize(self, configunit)
-!
-! !INPUT PARAMETERS:
-   class (type_square), intent(inout), target :: self
-   integer,             intent(in)            :: configunit
+      class (type_square), intent(inout), target :: self
+      integer,             intent(in)            :: configunit
 
-   call self%register_dependency(self%id_source, 'source', '', 'source')
-   call self%register_diagnostic_variable(self%id_result, 'result', '', 'result', output=self%output)
-
+      call self%register_dependency(self%id_source, 'source', '', 'source')
+      call self%register_diagnostic_variable(self%id_result, 'result', '', 'result', output=self%output)
    end subroutine square_initialize
 
    subroutine square_do(self, _ARGUMENTS_DO_)
-    class (type_square), intent(in) :: self
-    _DECLARE_ARGUMENTS_DO_
+      class (type_square), intent(in) :: self
+      _DECLARE_ARGUMENTS_DO_
 
-    real(rk) :: value
+      real(rk) :: value
 
-    _LOOP_BEGIN_
-        _GET_(self%id_source, value)
-        _SET_DIAGNOSTIC_(self%id_result, value*value)
-    _LOOP_END_
+      _LOOP_BEGIN_
+         _GET_(self%id_source, value)
+         _SET_DIAGNOSTIC_(self%id_result, value*value)
+      _LOOP_END_
    end subroutine square_do
 
    subroutine product_initialize(self, configunit)
-!
-! !INPUT PARAMETERS:
-   class (type_product), intent(inout), target :: self
-   integer,              intent(in)            :: configunit
+      class (type_product), intent(inout), target :: self
+      integer,              intent(in)            :: configunit
 
-   call self%register_dependency(self%id_term1, 'term1', '', 'term1')
-   call self%register_dependency(self%id_term2, 'term2', '', 'term2')
-   call self%register_diagnostic_variable(self%id_result, 'result', '', 'term1 * term2', output=output_none)
-
+      call self%register_dependency(self%id_term1, 'term1', '', 'term1')
+      call self%register_dependency(self%id_term2, 'term2', '', 'term2')
+      call self%register_diagnostic_variable(self%id_result, 'result', '', 'term1 * term2', output=output_none)
    end subroutine product_initialize
 
    subroutine product_do(self, _ARGUMENTS_DO_)
-    class (type_product), intent(in) :: self
-    _DECLARE_ARGUMENTS_DO_
+      class (type_product), intent(in) :: self
+      _DECLARE_ARGUMENTS_DO_
 
-    real(rk) :: term1, term2
+      real(rk) :: term1, term2
 
-    _LOOP_BEGIN_
-        _GET_(self%id_term1, term1)
-        _GET_(self%id_term2, term2)
-        _SET_DIAGNOSTIC_(self%id_result, term1 * term2)
-    _LOOP_END_
+      _LOOP_BEGIN_
+         _GET_(self%id_term1, term1)
+         _GET_(self%id_term2, term2)
+         _SET_DIAGNOSTIC_(self%id_result, term1 * term2)
+      _LOOP_END_
    end subroutine product_do
 
    subroutine pelagic_size_spectrum_initialize(self, configunit)
@@ -429,8 +416,8 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer  :: isource
-      real(rk) :: spectrum(size(self%mass_grid)), bm_int, cov, var, slope, offset
-      real(rk), allocatable :: x(:),  y(:)
+      real(rk) :: spectrum(size(self%mass_grid)), bm_int, cov, var, slope, offset, meanx, meany
+      real(rk) :: x, y, sumx, sumy, sumxy, sumxx
       integer  :: i, n
 
       _HORIZONTAL_LOOP_BEGIN_
@@ -440,27 +427,29 @@ contains
             spectrum = spectrum + self%scale_factors(:, isource) * bm_int
          end do
          n = 0
-         do i = 1, size(self%mass_grid)
-            if (spectrum(i) > 0) n = n + 1
-         end do
-         allocate(x(n))
-         allocate(y(n))
-         n = 0
+         sumx = 0._rk
+         sumy = 0._rk
+         sumxx = 0._rk
+         sumxy = 0._rk
          do i = 1, size(self%mass_grid)
             if (spectrum(i) > 0) then
                n = n + 1
-               x(n) = self%mass_grid(i)
-               y(n) = log(spectrum(i))
+               x = self%mass_grid(i)
+               y = log(spectrum(i))
+               sumx = sumx + x
+               sumy = sumy + y
+               sumxx = sumxx + x * x
+               sumxy = sumxy + x * y
             end if
          end do
-         cov = sum(x*y)/n - sum(x)*sum(y)/n/n
-         var = sum(x**2)/n - (sum(x)/n)**2
-         slope = cov/var
-         offset = sum(y)/n - sum(slope*x)/n
+         meanx = sumx / n
+         meany = sumy / n
+         cov = sumxy / n - meanx * meany
+         var = sumxx / n - meanx * meanx
+         slope = cov / var
+         offset = meany - slope * meanx
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_slope, slope)
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_offset, offset)
-         deallocate(x)
-         deallocate(y)
       _HORIZONTAL_LOOP_END_
 
    end subroutine pelagic_size_spectrum_do_bottom
