@@ -93,6 +93,9 @@ def process(gotm_result, outfile):
     #result.plot_annual_mean('landings', plot_change=True)
     #pyplot.show()
 
+    result.save_as_nc(outfile)
+    return
+
     biomass = result.get_biomass_timeseries()
 
     # Write tab-separated text file with ERSEM and mizer variables.

@@ -520,6 +520,28 @@ class MizerResult(object):
             return objects
         return animation.FuncAnimation(fig, new_frame, frames=self.spectrum.shape[0], interval=1000./30, blit=True)
 
+    def save_as_nc(self, path, save_spectrum=True):
+        import netCDF4
+        with netCDF4.Dataset(path, 'w') as nc:
+            def add_variable(name, units, long_name, dimensions=('time',), dtype=float, **kwargs):
+                ncvar = nc.createVariable(name, dtype, dimensions)
+                ncvar.units = units
+                ncvar.long_name = long_name
+                for name, value in kwargs.items():
+                    setattr(ncvar, name, value)
+                return ncvar
+
+            nc.createDimension('time', self.t.size)
+            nc.createDimension('bin', self.model.bin_masses.size)
+            nctime = nc.createVariable('time', int, ('time',))
+            nctime.units = 'seconds since %s' % num2date(self.t[0]).strftime('%Y-%m-%d %H:%M:%S')
+            nctime[:] = netCDF4.date2num(num2date(self.t), nctime.units)
+            add_variable('w', 'g WM', 'individual mass', dimensions=('bin',))[:] = self.model.bin_masses
+            if save_spectrum:
+                ncstate = add_variable('spectrum', 'g WM/m2', 'biomass per bin', dimensions=('time', 'bin'), coordinates='time w')
+                ncstate[:, :] = self.spectrum
+            add_variable('biomass', 'g WM/m2', 'total fish biomass')[:] = self.get_biomass_timeseries()
+
 if __name__ == '__main__':
     # Time-integrate over 200 days (note: FABM's internal time unit is seconds!)
     m = Mizer()
