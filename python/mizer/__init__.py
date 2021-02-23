@@ -7,7 +7,6 @@ import datetime
 
 import yaml
 import numpy
-import numpy.linalg
 import scipy.integrate
 from matplotlib import pyplot
 from matplotlib import animation
@@ -221,11 +220,21 @@ class Mizer(object):
             if recruitment_from_prey == 1:
                 return preys.mean(axis=-1) * predbin_per_preybin
             elif recruitment_from_prey == 2:
-                minpreymass = self.bin_masses[0]/self.parameters['beta']**2
-                i = prey.masses.searchsorted(minpreymass)
-                A = numpy.vstack([numpy.log10(prey.masses[i:]), numpy.ones(prey.masses[i:].size)]).T
-                c, residuals, rank, s = numpy.linalg.lstsq(A, numpy.log10(preys[..., i:].T))
-                return 10.**(c[0, ...]*numpy.log10(self.bin_masses[0]) + c[1, ...]) * predbin_per_preybin
+                minpreymass = self.bin_masses[0] / self.parameters['beta']**2
+                imin = prey.masses.searchsorted(minpreymass)
+                s = preys[..., imin:]
+                invalid = s <= 0
+                y = numpy.log10(numpy.ma.array(s, mask=invalid))
+                x = numpy.log10(numpy.ma.array(numpy.broadcast_to(prey.masses[imin:], y.shape), mask=invalid))
+                xmean = x.mean(axis=-1)
+                ymean = y.mean(axis=-1)
+                xxmean = (x**2).mean(axis=-1)
+                xymean = (x * y).mean(axis=-1)
+                cov = xymean - xmean * ymean
+                var = xxmean - xmean**2
+                slope = cov / var
+                offset = ymean - slope * xmean
+                return 10.**(slope * numpy.log10(self.bin_masses[0]) + offset) * predbin_per_preybin
 
         # Create multiplier for rate of change - zero for state variables that will be forced.
         multiplier = numpy.ones((state.size,))*86400*dt
@@ -541,6 +550,7 @@ class MizerResult(object):
                 ncstate = add_variable('spectrum', 'g WM/m2', 'biomass per bin', dimensions=('time', 'bin'), coordinates='time w')
                 ncstate[:, :] = self.spectrum
             add_variable('biomass', 'g WM/m2', 'total fish biomass')[:] = self.get_biomass_timeseries()
+            add_variable('h', 'm', 'effective depth over which fish are distributed')[:] = self.depth
 
 if __name__ == '__main__':
     # Time-integrate over 200 days (note: FABM's internal time unit is seconds!)
