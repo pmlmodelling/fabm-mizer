@@ -12,18 +12,20 @@ def compare(offline_path, gotm_path, figure_path=None):
         bm_tot2 = ncgotm['fish_c_tot'][:, 0, 0]
         h2 = ncgotm['fish_w_integrator_result'][:, 0, 0]**2 / ncgotm['fish_w2_integrator_result'][:, 0, 0]
 
-    fig = matplotlib.pyplot.figure(figsize=(6,4))
+    fig = matplotlib.pyplot.figure(figsize=(8, 6))
     ax = fig.add_subplot(211)
     ax.plot(time1, h1, label='offline')
     ax.plot(time2, h2, label='online-uncoupled')
     ax.set_ylabel('effective depth range (m)')
+    ax.autoscale(enable=True, axis='x', tight=True)
     ax.grid()
     ax.legend()
 
     ax = fig.add_subplot(212)
     ax.plot(time1, bm_tot1, label='offline')
     ax.plot(time2, bm_tot2, label='online-uncoupled')
-    ax.set_ylabel('effective depth range (m)')
+    ax.set_ylabel('total fish biomass (g WM/m2)')
+    ax.autoscale(enable=True, axis='x', tight=True)
     ax.grid()
     ax.legend()
     if figure_path is None:
