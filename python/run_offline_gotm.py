@@ -81,7 +81,7 @@ def process(gotm_result, outfile):
     depth = mizer.datasources.TimeSeries(gotm_result, 'weights.sum(axis=1)**2/(h*(P1_c+P2_c+P3_c+P4_c+Z4_c+Z5_c+Z6_c)**2).sum(axis=1)', expressions=expressions, lon=0, lat=0)
 
     # create mizer model
-    m = mizer.Mizer(prey=prey_collection, parameters=parameters, temperature=temp, recruitment_from_prey=1, depth=depth)
+    m = mizer.Mizer(prey=prey_collection, parameters=parameters, temperature=temp, recruitment_from_prey=2, depth=depth)
 
     # Time-integrate
     result = m.run(temp.times, spinup=50, verbose=True, save_spinup=False)
