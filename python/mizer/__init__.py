@@ -224,6 +224,7 @@ class Mizer(object):
                 imin = prey.masses.searchsorted(minpreymass)
                 s = preys[..., imin:]
                 invalid = s <= 0
+                s[invalid] = 1.
                 y = numpy.log10(numpy.ma.array(s, mask=invalid))
                 x = numpy.log10(numpy.ma.array(numpy.broadcast_to(prey.masses[imin:], y.shape), mask=invalid))
                 xmean = x.mean(axis=-1)

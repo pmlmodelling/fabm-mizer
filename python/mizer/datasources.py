@@ -23,7 +23,7 @@ class Constant(ValueProvider):
         self.value = value
 
     def get(self, time):
-        return self.value
+        return numpy.broadcast_to(self.value, numpy.shape(time))
 
     def mean(self):
         return self.value
