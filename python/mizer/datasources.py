@@ -64,7 +64,7 @@ class TimeSeries(ValueProvider):
                 istop = timedata.searchsorted(netCDF4.date2num(stop, nctime.units)) + 1
                 dim2index[time_name] = slice(0, istop)
                 timedata = timedata[:istop]
-            self.times = date2num(netCDF4.num2date(timedata, nctime.units))
+            self.times = date2num(netCDF4.num2date(timedata, nctime.units, only_use_cftime_datetimes=False))
 
             if variable_name in nc.variables:
                 ncvar = nc.variables[variable_name]
@@ -100,7 +100,7 @@ class TimeSeries(ValueProvider):
                 self.data = self.data.compressed()
                 assert timedata.shape == self.data.shape
 
-            self.times = date2num(netCDF4.num2date(timedata, nctime.units))
+            self.times = date2num(netCDF4.num2date(timedata, nctime.units, only_use_cftime_datetimes=False))
 
         valid = numpy.isfinite(self.data)
         assert valid.all(), 'Variable %s in %s contains non-finite values (NaN?). Data: %s. First problem time: %s' % (path, variable_name, self.data, num2date(self.times[numpy.logical_not(valid)][0]))

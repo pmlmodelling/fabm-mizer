@@ -20,7 +20,7 @@ class NcResult(object):
    def getTime(self):
       nctime = self.nc.variables['time']
       timeunits = nctime.units
-      return netCDF4.num2date(nctime[:], timeunits)
+      return netCDF4.num2date(nctime[:], timeunits, only_use_cftime_datetimes=False)
 
 class PythonResult(object):
    def __init__(self, dts, name2data, name2var):

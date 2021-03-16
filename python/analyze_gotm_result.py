@@ -38,7 +38,7 @@ def add_group(data, minw, maxw):
 
 with netCDF4.Dataset(args.source) as nc:
    nctime = nc.variables['time']
-   dt = netCDF4.num2date(nctime[:], nctime.units)
+   dt = netCDF4.num2date(nctime[:], nctime.units, only_use_cftime_datetimes=False)
    h = nc.variables['h'][:, :, 0, 0]
    add_group(nc.variables['P1_c'][:, :, 0, 0], 4.188e-9, 4.188e-6)
    add_group(nc.variables['P2_c'][:, :, 0, 0], 4.188e-12, 4.188e-9)
