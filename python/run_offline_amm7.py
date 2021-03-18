@@ -47,7 +47,7 @@ preylist.append(('diatoms', 'P1_c', esd2mass(20., 200.)))
 preylist.append(('nanophytoplankton', 'P2_c',   esd2mass(2., 20.)))
 preylist.append(('picophytoplankton', 'P3_c',   esd2mass(.2, 2.)))
 preylist.append(('microphytoplankton', 'P4_c', esd2mass(20., 200.)))
-preylist.append(('mesozooplankton', 'Z4_c', (1e-5, 1e-3)))
+preylist.append(('mesozooplankton', 'Z4_c', (4.188e-6, 1e-3)))
 preylist.append(('microzooplankton', 'Z5_c', esd2mass(20., 200.)))
 preylist.append(('heterotrophic nanoflagellates', 'Z6_c', esd2mass(2., 20.)))
 temp_name = 'votemper'
@@ -139,7 +139,7 @@ def processLocation(args):
         istop = times.searchsorted(date2num(stop_time))
     times = times[istart:istop]
 
-    result = m.run(times, spinup=spinup, verbose=True, save_spinup=False)
+    result = m.run(times, spinup=spinup, verbose=True, save_spinup=False,dt=1/(24*4))
 
     if result is None:
         return
@@ -152,17 +152,18 @@ def processLocation(args):
 
     biomass = result.get_biomass_timeseries()
     landings_var, landings = result.get_timeseries('landings')
+    lfi10 = result.get_lfi_timeseries(10.)
     lfi80 = result.get_lfi_timeseries(80.)
     lfi500 = result.get_lfi_timeseries(500.)
     lfi10000 = result.get_lfi_timeseries(10000.)
     landings[1:] = landings[1:] - landings[:-1]
     landings[0] = 0
-    return path, i, j, times, biomass, landings, lfi80, lfi500, lfi10000, m.bin_masses, result.spectrum
+    return path, i, j, times, biomass, landings, lfi10, lfi80, lfi500, lfi10000, m.bin_masses, result.spectrum
 
 def ppProcessLocation(args, p):
-    import analyze_amm7
-    analyze_amm7.parameters = p
-    return analyze_amm7.processLocation(args)
+    import run_offline_amm7
+    run_offline_amm7.parameters = p
+    return run_offline_amm7.processLocation(args)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -254,6 +255,7 @@ if __name__ == '__main__':
                 vardict['mask'][...] = 0
                 vardict['biomass'] = addVariable(ncout, 'biomass', 'biomass', 'g WM/m2', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
                 vardict['landings'] = addVariable(ncout, 'landings', 'landings', 'g WM', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
+                vardict['lfi10'] = addVariable(ncout, 'lfi10', 'fraction of fish > 10 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
                 vardict['lfi80'] = addVariable(ncout, 'lfi80', 'fraction of fish > 80 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
                 vardict['lfi500'] = addVariable(ncout, 'lfi500', 'fraction of fish > 500 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
                 vardict['lfi10000'] = addVariable(ncout, 'lfi10000', 'fraction of fish > 10000 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
@@ -268,11 +270,12 @@ if __name__ == '__main__':
         return source2output[source], source2vars[source]
 
     def saveResult(result, sync=True, add_biomass_per_bin=False):
-        source, i, j, times, biomass, landings, lfi80, lfi500, lfi10000, w, spectrum = result
+        source, i, j, times, biomass, landings, lfi10,lfi80, lfi500, lfi10000, w, spectrum = result
         ncout, vardict = getOutput(source, times, w, add_biomass_per_bin=add_biomass_per_bin)
         print('saving results from %s, i=%i, j=%i (mean biomass = %.3g)' % (source, i, j, biomass.mean()))
         vardict['biomass'][:, j, i] = biomass
         vardict['landings'][:, j, i] = landings
+        vardict['lfi10'][:,j,i]= lfi10
         vardict['lfi80'][:, j, i] = lfi80
         vardict['lfi500'][:, j, i] = lfi500
         vardict['lfi10000'][:, j, i] = lfi10000
