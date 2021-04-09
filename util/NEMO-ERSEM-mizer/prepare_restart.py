@@ -19,13 +19,13 @@ prefixes = 'fabm_st2Db', 'fabm_st2Dn'
 
 if args.bmsource is not None:
    with netCDF4.Dataset(args.bmsource) as nc:
-      data = nc.variables['Nw'][...] * args.bmscale
-      assert data.ndim == 4
-      assert data.shape[0] == 1
-      assert data.shape[3] == args.N
-      print('Source biomass array has dimensions %i x %i' % data.shape[1:3])
-      for i in xrange(args.N):
-         assignments['fish_c%i' % (i+1)] = data[:, :, :, i]
+      data = nc.variables['Nw_final'][...] * args.bmscale
+      assert data.ndim == 3
+     # assert data.shape[0] == 1
+     # assert data.shape[3] == args.N
+      print('Source biomass array has dimensions %i x %i' % data.shape[0:2])
+      for i in range(args.N):
+         assignments['fish_c%i' % (i+1)] = data[ :, :, i]
 
 with netCDF4.Dataset(args.target, 'r+') as nc:
    print('%s contains the following variables:' % args.target)
@@ -39,4 +39,4 @@ with netCDF4.Dataset(args.target, 'r+') as nc:
          else:
             nctgt = nc.createVariable(prefix + name, ncsrc.dtype, ncsrc.dimensions)
          print('Writing %s (min = %.4g, max = %.4g, mean = %.4g)...' % (prefix + name, numpy.min(value), numpy.max(value), numpy.mean(value)))
-         nctgt[...] = value
+         nctgt[0,:] = value
