@@ -222,11 +222,8 @@ class Mizer(object):
             elif recruitment_from_prey == 2:
                 minpreymass = self.bin_masses[0] / self.parameters['beta']**2
                 imin = prey.masses.searchsorted(minpreymass)
-                s = preys[..., imin:]
-                invalid = s <= 0
-                s[invalid] = 1.
-                y = numpy.log10(numpy.ma.array(s, mask=invalid))
-                x = numpy.log10(numpy.ma.array(numpy.broadcast_to(prey.masses[imin:], y.shape), mask=invalid))
+                y = numpy.ma.log10(preys[..., imin:])
+                x = numpy.log10(numpy.ma.array(numpy.broadcast_to(prey.masses[imin:], y.shape), mask=numpy.ma.getmask(y)))
                 xmean = x.mean(axis=-1)
                 ymean = y.mean(axis=-1)
                 xxmean = (x**2).mean(axis=-1)
