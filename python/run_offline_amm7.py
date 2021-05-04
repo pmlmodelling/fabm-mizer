@@ -128,7 +128,7 @@ def processLocation(args):
     #temp = 12.
 
     # create mizer model
-    m = mizer.Mizer(prey=prey_collection, parameters=parameters, temperature=temp, recruitment_from_prey=1, depth=depth)
+    m = mizer.Mizer(prey=prey_collection, parameters=parameters, temperature=temp, recruitment_from_prey=2, depth=depth)
 
     # Time-integrate
     spinup = 50
