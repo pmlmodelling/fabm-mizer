@@ -50,7 +50,7 @@ class PreyCollection(BasePreyCollection):
         return numpy.array([item.value_provider.mean() for item in self.items])
 
 class GriddedPreyCollection(BasePreyCollection):
-    def __init__(self, source, maximum_mass=None):
+    def __init__(self, source, maximum_mass=None, extend=True):
         BasePreyCollection.__init__(self)
         self.source = source
 
@@ -62,21 +62,29 @@ class GriddedPreyCollection(BasePreyCollection):
             max_prey_mass = current_max if max_prey_mass is None else max(max_prey_mass, current_max)
         if maximum_mass is not None:
             max_prey_mass = min(max_prey_mass, maximum_mass)
-        self.delta_log10mass = 0.1
-        prey_mass_bounds = numpy.arange(numpy.log10(min_prey_mass)-self.delta_log10mass/2, numpy.log10(max_prey_mass)+self.delta_log10mass, self.delta_log10mass)
-        prey_mass_centers = (prey_mass_bounds[1:]+prey_mass_bounds[:-1])/2
+        log10_min_prey_mass, log10_max_prey_mass = numpy.log10(min_prey_mass), numpy.log10(max_prey_mass)
+        n = int(round((log10_max_prey_mass - log10_min_prey_mass) / 0.1))
+        self.delta_log10mass = (log10_max_prey_mass - log10_min_prey_mass) / n
+        if extend:
+            n += 1
+            log10_min_prey_mass -= 0.5 * self.delta_log10mass
+            log10_max_prey_mass += 0.5 * self.delta_log10mass
+        prey_mass_bounds = numpy.linspace(log10_min_prey_mass, log10_max_prey_mass, n)
+        prey_mass_centers = 0.5 * (prey_mass_bounds[1:] + prey_mass_bounds[:-1])
         self.prey_bin_weights = []
         for prey_item in self.source.items:
             log10mass = numpy.log10(prey_item.mass)
             weights = numpy.zeros_like(prey_mass_centers)
             if isinstance(prey_item.mass, float):
-                i = numpy.argmin(numpy.abs(prey_mass_centers-log10mass))
+                # prey mass is given as a single value
+                i = numpy.argmin(numpy.abs(prey_mass_centers - log10mass))
                 weights[i] = 1.
             else:
+                # prey mass is given as a range (min, max)
                 for ibin in range(len(prey_mass_centers)):
                     left  = max(log10mass[0], prey_mass_bounds[ibin])
-                    right = min(log10mass[1], prey_mass_bounds[ibin+1])
-                    weights[ibin] = max(0., right-left)/(log10mass[1]-log10mass[0])
+                    right = min(log10mass[1], prey_mass_bounds[ibin + 1])
+                    weights[ibin] = max(0., right - left) / (log10mass[1] - log10mass[0])
                 assert abs(weights.sum()-1.) < 1e-12 or maximum_mass < prey_item.mass[1], '%s: weights should add up to 1, but currently add up to %s' % (prey_item.name, weights.sum())
             self.prey_bin_weights.append(weights)
 
@@ -387,17 +395,19 @@ class MizerResult(object):
     def get_f(self):
         return numpy.stack([self.diagnostics['fish/f%i' % (i + 1,)] for i in range(self.spectrum.shape[1])], axis=1)
 
-    def plot_spectrum(self, itime=-1, fig=None, normalization=0, global_range=False):
-        if fig is None:
-            fig = pyplot.figure()
-        ax = fig.gca()
-        style = '.' if normalization == 0 else '-'
+    def plot_spectrum(self, itime=-1, ax=None, normalization=0, global_range=False, style=None, label=None):
+        if ax is None:
+            fig, ax = pyplot.subplots()
+        if style is None:
+            style = '.' if normalization == 0 else '-'
+        dpreybin = numpy.log10(self.model.prey.masses[1]) - numpy.log10(self.model.prey.masses[0])
+        dbin = numpy.log10(self.model.bin_masses[1]) - numpy.log10(self.model.bin_masses[0])
         prey_masses, prey_values, lines = None, None, []
         if normalization == 0:
-            values = self.spectrum
-            ax.set_ylabel('wet mass (g)')
+            values = self.spectrum / dbin
+            ax.set_ylabel('wet mass (g) per log10 individual mass')
             prey_masses = self.model.prey.masses
-            prey_values = self.y[itime, self.model.prey_indices]
+            prey_values = self.y[itime, self.model.prey_indices] * self.depth[itime] / dpreybin
         elif normalization == 1:
             values = self.biomass_density
             ax.set_ylabel('wet mass density (g/g)')
@@ -411,15 +421,17 @@ class MizerResult(object):
                 if prey_min > 0:
                     minval = min(minval, prey_min)
                 maxval = max(maxval, prey_values.max())
-            ax.set_ylim(minval/10, maxval*10)
+            ax.set_ylim(max(1e-8 * maxval, minval)/10, maxval*10)
         if prey_masses is not None:
-            line, = ax.loglog(prey_masses, prey_values, '.')
+            line, = ax.loglog(prey_masses, prey_values, style)
             lines.append(line)
-        line, = ax.loglog(self.model.bin_masses, values[itime, :], style)
+        line, = ax.loglog(self.model.bin_masses, values[itime, :], style, label=label)
         lines.append(line)
         ax.grid(True)
         ax.set_xlabel('wet mass (g)')
         title = ax.set_title(num2date(self.t[itime]).strftime('%Y-%m-%d'))
+        if label:
+            ax.legend()
         return tuple(lines) + (title,)
 
     def get_biomass_timeseries(self, min_weight=None, max_weight=None):
@@ -506,14 +518,16 @@ class MizerResult(object):
         ax.grid(True, axis='y')
         return bars
 
-    def animate_spectrum(self, dir='.', normalization=0):
-        fig = pyplot.figure()
-        objects = self.plot_spectrum(0, fig=fig, normalization=normalization, global_range=True)
+    def animate_spectrum(self, dir='.', normalization=0, **kwargs):
+        fig, ax = pyplot.subplots()
+        objects = self.plot_spectrum(0, ax=ax, normalization=normalization, global_range=True)
         lines, title = objects[:-1], objects[-1]
         prey_values = None
+        dpreybin = numpy.log10(self.model.prey.masses[1]) - numpy.log10(self.model.prey.masses[0])
+        dbin = numpy.log10(self.model.bin_masses[1]) - numpy.log10(self.model.bin_masses[0])
         if normalization == 0:
-            values = self.spectrum
-            prey_values = self.y[:, self.model.prey_indices]
+            values = self.spectrum / dbin
+            prey_values = self.y[:, self.model.prey_indices] * self.depth[:, numpy.newaxis] / dpreybin
         elif normalization == 1:
             values = self.biomass_density
         elif normalization == 2:
@@ -525,7 +539,7 @@ class MizerResult(object):
             lines[-1].set_ydata(values[itime, :])
             title.set_text(dates[itime].strftime('%Y-%m-%d'))
             return objects
-        return animation.FuncAnimation(fig, new_frame, frames=self.spectrum.shape[0], interval=1000./30, blit=True)
+        return animation.FuncAnimation(fig, new_frame, frames=self.spectrum.shape[0], interval=1000./30, blit=True, **kwargs)
 
     def save_as_nc(self, path, save_spectrum=True):
         import netCDF4
