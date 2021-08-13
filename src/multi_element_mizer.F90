@@ -68,7 +68,10 @@ module mizer_multi_element_population
       type (type_horizontal_diagnostic_variable_id)             :: id_T_ave
       type (type_horizontal_diagnostic_variable_id)             :: id_c_tot
       type (type_horizontal_diagnostic_variable_id)             :: id_c_small
+      type (type_horizontal_diagnostic_variable_id)             :: id_c_lfi
       real(rk)                                                  :: w_threshold
+      real(rk)                                                  :: lfi_w_threshold
+
 
       ! Number of size classes and prey
       integer :: nclass
@@ -190,6 +193,7 @@ contains
    call self%get_parameter(w_mat,      'w_mat',  'g',    'maturation mass', default=0.0_rk, minimum=0.0_rk)
    call self%get_parameter(w_inf,      'w_inf',  'g',    'asymptotic mass', default=1e3_rk, minimum=0.0_rk)
    call self%get_parameter(self%w_threshold,'w_threshold','g','mass separating small and large individuals (for diagnostic output only)', default=10._rk, minimum=0.0_rk)
+   call self%get_parameter(self%lfi_w_threshold,'lfi_w_threshold','g','mass for lfi index separating small and large individuals (for diagnostic output only)', default=582._rk, minimum=0.0_rk)
    call self%get_parameter(self%beta,  'beta',   '-',    'preferred predator:prey mass ratio', default=100.0_rk, minimum=0.0_rk)
    call self%get_parameter(self%sigma, 'sigma',  '-',    'width of prey size preference (sd in ln mass units)', default=1.0_rk, minimum=0.0_rk)
    call self%get_parameter(self%xi,    'xi',     '-',    'fraction of mass consisting of lipid reserve', default=0.1_rk, minimum=0.0_rk, maximum=1.0_rk)
@@ -491,7 +495,7 @@ contains
    call self%register_diagnostic_variable(self%id_R,'R','# m-2 d-1','recruitment',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_tot, 'c_tot', 'g m-2', 'total biomass', source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_small, 'c_small', 'g m-2', 'small fish', source=source_do_bottom)
-
+   call self%register_diagnostic_variable(self%id_c_lfi, 'c_lfi', 'g m-2', 'fish mass above cutoff for LFI', source=source_do_bottom)
    contains
    
    subroutine register_waste(name, composition, id_c, id_n, id_p, id_s)
@@ -582,7 +586,7 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey,istate
-      real(rk) :: c_small, slope, offset, endpoint, expected_eggs
+      real(rk) :: c_lfi, c_small, slope, offset, endpoint, expected_eggs
       real(rk) :: E_e,E_a_c,E_a_n,E_a_p,E_a_s,f,total_reproduction,T_lim,temp,T_w_int,w_int,g_tot,R,R_p,nflux(0:self%nclass),prey_state,g_tot_c,g_tot_n,g_tot_p
       real(rk),dimension(self%nprey)  :: prey_c,prey_n,prey_p,prey_s,prey_loss
       real(rk),dimension(self%nclass) :: Nw,I_c,I_n,I_p,I_s,maintenance,g,mu,reproduction
@@ -592,12 +596,15 @@ contains
 
          ! Retrieve size-class-specific abundances
          c_small = 0
+         c_lfi = 0
          do iclass=1,self%nclass
             _GET_HORIZONTAL_(self%id_c(iclass), Nw(iclass))
             if (self%w(iclass) < self%w_threshold) c_small = c_small + Nw(iclass)
+            if (self%w(iclass) > self%lfi_w_threshold) c_lfi = c_lfi + Nw(iclass)
          end do
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_tot, sum(Nw)*g_per_mmol_carbon)
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_small, c_small*g_per_mmol_carbon)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_lfi, c_lfi*g_per_mmol_carbon)
 
          ! Retrieve prey abundances
          do iprey=1,self%nprey
