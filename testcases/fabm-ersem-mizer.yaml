@@ -64,6 +64,7 @@ instances:
        prey7: Z6
        egested_matter: R6
        respired_carbon: O3
+       respired_oxygen: O2
        excreted_nitrogen: N4
        excreted_phosphorus: N1
   zenithAngle:
