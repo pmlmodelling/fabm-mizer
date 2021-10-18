@@ -50,7 +50,7 @@ class PreyCollection(BasePreyCollection):
         return numpy.array([item.value_provider.mean() for item in self.items])
 
 class GriddedPreyCollection(BasePreyCollection):
-    def __init__(self, source, maximum_mass=None, extend=True):
+    def __init__(self, source, maximum_mass=None, extend=True, old=False):
         BasePreyCollection.__init__(self)
         self.source = source
 
@@ -70,7 +70,14 @@ class GriddedPreyCollection(BasePreyCollection):
             log10_min_prey_mass -= 0.5 * self.delta_log10mass
             log10_max_prey_mass += 0.5 * self.delta_log10mass
         prey_mass_bounds = numpy.linspace(log10_min_prey_mass, log10_max_prey_mass, n)
+
+        if old:
+            # SOLSTICE manuscript
+            self.delta_log10mass = 0.1
+            prey_mass_bounds = numpy.arange(numpy.log10(min_prey_mass)-self.delta_log10mass/2, numpy.log10(max_prey_mass)+self.delta_log10mass, self.delta_log10mass)
+
         prey_mass_centers = 0.5 * (prey_mass_bounds[1:] + prey_mass_bounds[:-1])
+
         self.prey_bin_weights = []
         for prey_item in self.source.items:
             log10mass = numpy.log10(prey_item.mass)
