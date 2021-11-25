@@ -105,7 +105,7 @@ module mizer_multi_element_population
       integer  :: T_dependence ! Type of temperature dependence (0: none, 1: Arrhenius)
       real(rk) :: c1           ! Reference constant in Arrhenius equation = E_a/k/(T_ref+Kelvin)
       real(rk) :: E_a          ! Activation energy (eV)
-      real(rk) :: resp_o2C      ! oxygen produced per carbon respired (mol:mol,constant)
+ !     real(rk) :: resp_o2C      ! oxygen produced per carbon respired (mol:mol,constant)
 
       logical :: feedback
 
@@ -223,7 +223,7 @@ contains
    if (cannibalism) call self%get_parameter(biomass_has_prey_unit, 'biomass_has_prey_unit', '', 'biomass has the same unit as prey', default=.true.)
    call self%get_parameter(self%qnc,   'qnc',        'mol mol-1','nitrogen to carbon ratio', default=16.0_rk/106.0_rk)
    call self%get_parameter(self%qpc,   'qpc',        'mol mol-1','phosphorus to carbon ratio', default=1.0_rk/106.0_rk)
-      call self%get_parameter(self%resp_o2C,   'resp_o2C',        'mol mol-1','oxygen consumed per carbon respired', default=127_rk/106.0_rk)
+!      call self%get_parameter(self%resp_o2C,   'resp_o2C',        'mol mol-1','oxygen consumed per carbon respired', default=127_rk/106.0_rk)
    call self%get_parameter(self%feedback, 'feedback', '', 'feedback from fish to ecosystem (prey, waste, O2, CO2)', default=.true.)
 
    call self%get_parameter(self%T_dependence, 'T_dependence', '', 'temperature dependence (0: none, 1: Arrhenius)', default=0)
@@ -472,7 +472,7 @@ contains
 
    ! Register a state variable for waste (faeces, maintenance, dead matter resulting from non-predation mortality, fraction of offspring that does not survive)
    call register_waste('egested_matter', 'cnps', self%id_waste_c, self%id_waste_n, self%id_waste_p, self%id_waste_s)
-   call register_waste('respired_oxygen', 'c', id_c=self%id_o2)
+ !  call register_waste('respired_oxygen', 'c', id_c=self%id_o2)
    call register_waste('respired_carbon', 'c', id_c=self%id_dic)
    call register_waste('excreted_nitrogen', 'n', id_n=self%id_din)
    call register_waste('excreted_phosphorus', 'p', id_p=self%id_dip)
@@ -777,7 +777,7 @@ contains
 
          ! Compute waste fluxes: total ingestion plus mortality, minus mass used in growth, minus recruitment, plus growth over right edge of resolved size range.
          if (self%feedback) then
-            _SET_BOTTOM_ODE_(self%id_o2,-self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c*Nw))
+  !          _SET_BOTTOM_ODE_(self%id_o2,-self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c*Nw))
             _SET_BOTTOM_ODE_(self%id_dic,(1-self%alpha-self%alpha_eg)*sum(I_c*Nw))
             _SET_BOTTOM_ODE_(self%id_din,(1-self%alpha-self%alpha_eg)*sum(I_n*Nw))
             _SET_BOTTOM_ODE_(self%id_dip,(1-self%alpha-self%alpha_eg)*sum(I_p*Nw))
