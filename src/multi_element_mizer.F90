@@ -619,8 +619,8 @@ contains
          end do
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_tot, sum(Nw)*g_per_mmol_carbon)
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size1, c_size1*g_per_mmol_carbon)
-         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size2, c_size1*g_per_mmol_carbon)
-         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size3, c_size1*g_per_mmol_carbon)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size2, c_size2*g_per_mmol_carbon)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size3, c_size3*g_per_mmol_carbon)
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_lfi, (c_lfi/sum(Nw))*g_per_mmol_carbon)
 
          ! Retrieve prey abundances
