@@ -21,6 +21,7 @@ port=`python -c 'import random; print (random.randint(49152,65535))'`
 # define initial part of filename prodcued after gathering AMM7 data 
 name=archerfull_gather_forcing
 
+#Directory where mizer python code is stored
 cd ~/code/fabm-mizer/python
 
 export MKL_NUM_THREADS=1
