@@ -29,6 +29,7 @@ export MKL_NUM_THREADS=1
 # run the servers
 srun ~/.local/bin/ppserver.py -w $SLURM_CPUS_ON_NODE -t 3600 -s $secret -p $port -r &
 
-# launch the parallel processing
+# launch the parallel processing:  python -u run_offline.py <forcing_file_name> <output_filename> --ppservers $SLURM_JOB_NODELIST:$port --ncpus 0 --secret=$secret --debug --parameters=<parameter_file>
+
 python3 -u run_offline_amm7.py ~/projects/COMFORT_final/${name}.nc ~/projects/COMFORT_final/${name}-offline_mizer_w80_F08 --ppservers $SLURM_JOB_NODELIST:$port --ncpus 0 --secret=$secret --debug --parameters=/users/modellers/hpo/projects/COMFORT_final/mizer-amm7.yaml 
 
