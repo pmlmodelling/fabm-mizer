@@ -18,6 +18,7 @@ port=`python -c 'import random; print (random.randint(49152,65535))'`
 # This must be done before starting ppserver.py!
 #export PYTHONPATH="$PYTHONPATH:/users/modellers/hpo/code/mizer2/mizer/python"
 
+# define initial part of filename prodcued after gathering AMM7 data 
 name=archerfull_gather_forcing
 
 cd ~/code/fabm-mizer/python
