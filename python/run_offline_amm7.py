@@ -156,9 +156,13 @@ def processLocation(args):
     lfi80 = result.get_lfi_timeseries(80.)
     lfi500 = result.get_lfi_timeseries(500.)
     lfi10000 = result.get_lfi_timeseries(10000.)
+    bio1_25 = result.get_biomass_timeseries(1.25)
+    bio10 = result.get_biomass_timeseries(10.)
+    bio80 = result.get_biomass_timeseries(80.)
+    bio1000 = result.get_biomass_timeseries(1000.)
     landings[1:] = landings[1:] - landings[:-1]
     landings[0] = 0
-    return path, i, j, times, biomass, landings, lfi10, lfi80, lfi500, lfi10000, m.bin_masses, result.spectrum
+    return path, i, j, times, biomass, landings, lfi10, lfi80, lfi500, lfi10000, bio1_25,bio10,bio80,bio1000,m.bin_masses, result.spectrum
 
 def ppProcessLocation(args, p):
     import run_offline_amm7
@@ -259,6 +263,10 @@ if __name__ == '__main__':
                 vardict['lfi80'] = addVariable(ncout, 'lfi80', 'fraction of fish > 80 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
                 vardict['lfi500'] = addVariable(ncout, 'lfi500', 'fraction of fish > 500 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
                 vardict['lfi10000'] = addVariable(ncout, 'lfi10000', 'fraction of fish > 10000 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
+                vardict['bio1_25'] = addVariable(ncout, 'bio1_25', 'fraction of fish > 1.25 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
+                vardict['bio10'] = addVariable(ncout, 'bio10', 'fraction of fish > 10 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
+                vardict['bio80'] = addVariable(ncout, 'bio80', 'fraction of fish > 80 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)                
+                vardict['bio1000'] = addVariable(ncout, 'bio1000', 'fraction of fish > 1000 g', '-', dimensions=(time_name, 'y', 'x'), zlib=compress, contiguous=contiguous)
                 if add_biomass_per_bin:
                     ncout.createDimension('bin', w.size)
                     addVariable(ncout, 'w', 'individual mass', 'g WM', dimensions=('bin',), zlib=compress)[:] = w
@@ -270,7 +278,7 @@ if __name__ == '__main__':
         return source2output[source], source2vars[source]
 
     def saveResult(result, sync=True, add_biomass_per_bin=False):
-        source, i, j, times, biomass, landings, lfi10,lfi80, lfi500, lfi10000, w, spectrum = result
+        source, i, j, times, biomass, landings, lfi10,lfi80, lfi500, lfi10000, bio1_25, bio10, bio80, bio1000,w, spectrum = result
         ncout, vardict = getOutput(source, times, w, add_biomass_per_bin=add_biomass_per_bin)
         print('saving results from %s, i=%i, j=%i (mean biomass = %.3g)' % (source, i, j, biomass.mean()))
         vardict['biomass'][:, j, i] = biomass
@@ -279,6 +287,10 @@ if __name__ == '__main__':
         vardict['lfi80'][:, j, i] = lfi80
         vardict['lfi500'][:, j, i] = lfi500
         vardict['lfi10000'][:, j, i] = lfi10000
+        vardict['bio1_25'][:,j,i]= bio1_25
+        vardict['bio10'][:, j, i] = bio10
+        vardict['bio80'][:, j, i] = bio80
+        vardict['bio1000'][:, j, i] = bio1000
         vardict['mask'][j, i] = 1
         if add_biomass_per_bin:
            vardict['Nw'][:, j, i, :] = spectrum
