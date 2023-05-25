@@ -6,6 +6,8 @@ import os.path
 import numpy
 import netCDF4
 
+#Example run command: python3 <source_data_file_path_(i.e AMM7 run output> <target_filename>.nc  --start=2000 --stop=2003
+
 parser = argparse.ArgumentParser()
 parser.add_argument('source')
 parser.add_argument('target')
