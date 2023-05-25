@@ -6,11 +6,11 @@ import os.path
 import numpy
 import netCDF4
 
-#Example run command: python3 <source_data_file_path_(i.e AMM7 run output> <target_filename>.nc  --start=2000 --stop=2003
+#Example run command: python3 <source_data_file_path_(i.e AMM7 run output> <output_filename>.nc  --start=2000 --stop=2003
 
 parser = argparse.ArgumentParser()
-parser.add_argument('source')
-parser.add_argument('target')
+parser.add_argument('source') #Directory of baseline nemo-ersem data
+parser.add_argument('target') #outputfile
 parser.add_argument('--start', type=int, default=None)
 parser.add_argument('--stop', type=int, default=None)
 arguments = parser.parse_args()
