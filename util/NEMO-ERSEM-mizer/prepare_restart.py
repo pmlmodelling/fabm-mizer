@@ -4,10 +4,12 @@ import argparse
 import numpy
 import netCDF4
 
+
+#Command line: python3 prepare_restart.py <offline_model.nc> --bmsource=<NEMO_restart_file>
 parser = argparse.ArgumentParser()
-parser.add_argument('target')
+parser.add_argument('target') #Restart file in which to add fish data too
 parser.add_argument('--sourcevar', default='Y3_c')
-parser.add_argument('--bmsource')
+parser.add_argument('--bmsource')  # OFfline model nc file
 parser.add_argument('--bmscale', type=float, default=1./0.12)  # Data comes in g WM. Convert to mmol C. 0.012 g C/mmol C = 0.12 g WM/mmol C
 parser.add_argument('-N', type=int, default=100)
 args = parser.parse_args()
