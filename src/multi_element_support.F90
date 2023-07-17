@@ -19,10 +19,12 @@ module multi_element_support
       type (type_horizontal_diagnostic_variable_id) :: id_n_int
       type (type_horizontal_diagnostic_variable_id) :: id_p_int
       type (type_horizontal_diagnostic_variable_id) :: id_s_int
+      type (type_horizontal_diagnostic_variable_id) :: id_o2_int
       type (type_state_variable_id) :: id_c
       type (type_state_variable_id) :: id_n
       type (type_state_variable_id) :: id_p
       type (type_state_variable_id) :: id_s
+      type (type_state_variable_id) :: id_o2
       type (type_dependency_id) :: id_w
       type (type_horizontal_dependency_id) :: id_w_int
    contains
@@ -158,6 +160,7 @@ contains
       if (index(composition, 'n') /= 0)  call add_constituent('n', 'mmol N', 'nitrogen', self%id_n_int, self%id_n, standard_variables%total_nitrogen)
       if (index(composition, 'p') /= 0)  call add_constituent('p', 'mmol P', 'phosphorus', self%id_p_int, self%id_p, standard_variables%total_phosphorus)
       if (index(composition, 's') /= 0)  call add_constituent('s', 'mmol Si', 'silicate', self%id_s_int, self%id_s, standard_variables%total_silicate)
+      if (index(composition, 'o') /= 0)  call add_constituent('o2', 'mmol o2', 'oxygen', self%id_o2_int,self%id_o2,standard_variables%total_carbon)
 
    contains
 
@@ -170,10 +173,13 @@ contains
          class (type_absolute_rate_distributor), pointer :: rate_distributor
 
          call self%register_diagnostic_variable(id_int, name//'_int', units//'/m^2', 'depth-integrated '//long_name, act_as_state_variable=.true., domain=domain_bottom, source=source_none, output=output_none)
-         call self%add_to_aggregate_variable(standard_variable, id_int)
+         if (name/='o2') call self%add_to_aggregate_variable(standard_variable, id_int)
          call self%register_state_dependency(id_pelstate, name, units//'/m^3', long_name)
-         call self%request_coupling_to_model(id_pelstate, self%id_target, standard_variable)
-
+         if (name=='o2') then
+                call self%request_coupling_to_model(id_pelstate, self%id_target, 'o')
+         else
+                call self%request_coupling_to_model(id_pelstate, self%id_target, standard_variable)
+         endif
          allocate(rate_distributor)
          call self%add_child(rate_distributor, name//'_source_distributor', configunit=-1)
          call rate_distributor%request_coupling(rate_distributor%id_target, '../'//name)
