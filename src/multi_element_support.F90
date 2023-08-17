@@ -84,6 +84,15 @@ module multi_element_support
       procedure :: initialize => depth_averaged_class_initialize
       procedure :: do_bottom => depth_averaged_class_do_bottom
    end type type_depth_averaged_class
+   
+      type,extends(type_particle_model),public :: type_depth_averaged_class_demersal
+      type (type_horizontal_dependency_id) :: id_int_c
+      type (type_horizontal_diagnostic_variable_id) :: id_c
+      real(rk) :: qnc, qpc
+   contains
+      procedure :: initialize => depth_averaged_class_demersal_initialize
+      procedure :: do_bottom => depth_averaged_class_demersal_do_bottom
+   end type type_depth_averaged_class_demersal
 
    type,extends(type_particle_model),public :: type_product
       type (type_dependency_id)          :: id_term1
@@ -112,6 +121,16 @@ module multi_element_support
    contains
       procedure :: initialize => pelagic_size_spectrum_initialize
       procedure :: do_bottom => pelagic_size_spectrum_do_bottom
+   end type
+   
+   type,extends(type_base_model),public :: type_demersal_size_spectrum
+      type (type_horizontal_dependency_id), allocatable :: id_biomass(:)
+      type (type_horizontal_diagnostic_variable_id) :: id_benslope
+      type (type_horizontal_diagnostic_variable_id) :: id_benoffset
+      real(rk), allocatable :: scale_factors(:, :), mass_grid(:)
+   contains
+      procedure :: initialize => demersal_size_spectrum_initialize
+      procedure :: do_bottom => demersal_size_spectrum_do_bottom
    end type
 
 contains
@@ -143,6 +162,34 @@ contains
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c, int_c*int_w2/int_w/int_w)
       _HORIZONTAL_LOOP_END_
    end subroutine depth_averaged_class_do_bottom
+   
+      subroutine depth_averaged_class_demersal_initialize(self, configunit)
+      class (type_depth_averaged_class_demersal), intent(inout), target :: self
+      integer,                           intent(in)            :: configunit
+
+!      call self%register_dependency(self%id_int_w, 'int_w', '', 'depth-integral of weight')
+!      call self%register_dependency(self%id_int_w2, 'int_w2', '', 'depth-integral of squared weight')
+      call self%register_dependency(self%id_int_c, 'int_c', '', 'depth-integral of carbon')
+      call self%register_diagnostic_variable(self%id_c, 'c', 'mmol C/m^3', 'depth-averaged carbon', act_as_state_variable=.true., domain=domain_bottom, source=source_do_bottom, output=output_none)
+      call self%add_to_aggregate_variable(standard_variables%total_carbon,     self%id_c)
+      call self%add_to_aggregate_variable(standard_variables%total_nitrogen,   self%id_c, scale_factor=self%qnc)
+      call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_c, scale_factor=self%qpc)
+      call copy_horizontal_fluxes(self, self%id_c, './int_c')
+   end subroutine depth_averaged_class_demersal_initialize
+
+   subroutine depth_averaged_class_demersal_do_bottom(self, _ARGUMENTS_DO_BOTTOM_)
+      class (type_depth_averaged_class_demersal), intent(in) :: self
+      _DECLARE_ARGUMENTS_DO_BOTTOM_
+
+      real(rk) :: int_c
+
+      _HORIZONTAL_LOOP_BEGIN_
+!         _GET_HORIZONTAL_(self%id_int_w, int_w)
+!         _GET_HORIZONTAL_(self%id_int_w2, int_w2)
+         _GET_HORIZONTAL_(self%id_int_c, int_c)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c, int_c) !*int_w2/int_w/int_w)
+      _HORIZONTAL_LOOP_END_
+   end subroutine depth_averaged_class_demersal_do_bottom
 
    subroutine depth_integrated_sink_initialize(self, configunit)
 
@@ -459,5 +506,97 @@ contains
       _HORIZONTAL_LOOP_END_
 
    end subroutine pelagic_size_spectrum_do_bottom
+   
+   subroutine demersal_size_spectrum_initialize(self, configunit)
+      class (type_demersal_size_spectrum), intent(inout), target :: self
+      integer,                            intent(in)            :: configunit
+
+      integer  :: ngrid, nsource,nsource_start, i, isource
+      real(rk) :: w_min, w_max, dlog_w
+      character(len=10)  :: strindex,strindex2
+      !class (type_depth_integral), pointer :: depth_integral
+
+      call self%get_parameter(ngrid, 'ngrid', '', 'grid size', default=100)
+      call self%get_parameter(nsource, 'nsource', '', 'number of source pools')
+      call self%get_parameter(nsource_start, 'nsource_start', '', 'start number of source')
+      call self%get_parameter(w_min, 'w_min', '', 'minimum mass')
+      call self%get_parameter(w_max, 'w_max', '', 'maximum mass')
+
+      allocate(self%mass_grid(ngrid))
+      allocate(self%scale_factors(ngrid, nsource))
+      allocate(self%id_biomass(nsource))
+   !   allocate(self%id_biomass_int(nsource))
+      dlog_w = (log(w_max) - log(w_min)) / ngrid
+      do i = 1, ngrid
+         self%mass_grid(i) =  log(w_min) + (i - 0.5_rk) * dlog_w
+      end do
+      self%scale_factors = 0
+
+      do isource = 1, nsource
+        write (strindex,'(i0)') isource
+        write (strindex2,'(i0)') isource+nsource_start
+        call self%register_horizontal_dependency(self%id_biomass(isource), 'source'//trim(strindex2), '<SOURCE UNITS>', 'source '//trim(strindex2))
+   !     call self%request_coupling(self%id_biomass(isource), './source'//trim(strindex)//'_integrator/result')
+        call self%get_parameter(w_min, 'w_source'//trim(strindex2)//'_min', 'g', 'minimum mass of source '//trim(strindex2))
+        call self%get_parameter(w_max, 'w_source'//trim(strindex2)//'_max', 'g', 'maximum mass of source '//trim(strindex2))
+        do i = 1, ngrid
+           if (self%mass_grid(i) >= log(w_min) .and. self%mass_grid(i) <= log(w_max)) &
+              self%scale_factors(i, isource) = (min(log(w_max), self%mass_grid(i) + dlog_w/2) - max(log(w_min), self%mass_grid(i) - dlog_w/2))/(log(w_max) - log(w_min))
+        end do
+   !     allocate(depth_integral)
+ !       call self%add_child(depth_integral, 'source'//trim(strindex)//'_integrator', configunit=-1)
+   !     call depth_integral%request_coupling('source', '../source'//trim(strindex))
+  !      call self%register_dependency(self%id_biomass_int(isource), 'source'//trim(strindex)//'_int', '<SOURCE UNITS> m', 'depth integrated source '//trim(strindex))
+  !      call self%request_coupling(self%id_biomass_int(isource), './source'//trim(strindex)//'_integrator/result')
+      end do
+      do i = 1, size(self%mass_grid)
+         self%scale_factors(i, :) = self%scale_factors(i, :) / (exp(self%mass_grid(i) + dlog_w/2) - exp(self%mass_grid(i) - dlog_w/2))
+      end do
+      call self%register_diagnostic_variable(self%id_benslope, 'benslope', '-', 'slope of size spectrum', source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_benoffset, 'benoffset', 'ln <SOURCE UNITS> m', 'offset of size spectrum', source=source_do_bottom)
+   end subroutine demersal_size_spectrum_initialize
+   
+   subroutine demersal_size_spectrum_do_bottom(self, _ARGUMENTS_DO_BOTTOM_)
+      class (type_demersal_size_spectrum), intent(in) :: self
+      _DECLARE_ARGUMENTS_DO_BOTTOM_
+
+      integer  :: isource
+      real(rk) :: spectrum(size(self%mass_grid)), bm, cov, var, benslope, benoffset, meanx, meany
+      real(rk) :: x, y, sumx, sumy, sumxy, sumxx
+      integer  :: i, n
+
+      _HORIZONTAL_LOOP_BEGIN_
+         spectrum = 0
+         do isource = 1, size(self%scale_factors, 2)
+            _GET_HORIZONTAL_(self%id_biomass(isource), bm)
+            spectrum = spectrum + self%scale_factors(:, isource) * bm
+         end do
+         n = 0
+         sumx = 0._rk
+         sumy = 0._rk
+         sumxx = 0._rk
+         sumxy = 0._rk
+         do i = 1, size(self%mass_grid)
+            if (spectrum(i) > 0) then
+               n = n + 1
+               x = self%mass_grid(i)
+               y = log(spectrum(i))
+               sumx = sumx + x
+               sumy = sumy + y
+               sumxx = sumxx + x * x
+               sumxy = sumxy + x * y
+            end if
+         end do
+         meanx = sumx / n
+         meany = sumy / n
+         cov = sumxy / n - meanx * meany
+         var = sumxx / n - meanx * meanx
+         benslope = cov / var
+         benoffset = meany - benslope * meanx
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_benslope, benslope)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_benoffset, benoffset)
+      _HORIZONTAL_LOOP_END_
+
+   end subroutine demersal_size_spectrum_do_bottom
 
 end module multi_element_support
