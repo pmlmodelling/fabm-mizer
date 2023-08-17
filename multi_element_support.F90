@@ -125,8 +125,8 @@ module multi_element_support
    
    type,extends(type_base_model),public :: type_demersal_size_spectrum
       type (type_horizontal_dependency_id), allocatable :: id_biomass(:)
-      type (type_horizontal_diagnostic_variable_id) :: id_slope
-      type (type_horizontal_diagnostic_variable_id) :: id_offset
+      type (type_horizontal_diagnostic_variable_id) :: id_benslope
+      type (type_horizontal_diagnostic_variable_id) :: id_benoffset
       real(rk), allocatable :: scale_factors(:, :), mass_grid(:)
    contains
       procedure :: initialize => demersal_size_spectrum_initialize
@@ -511,13 +511,14 @@ contains
       class (type_demersal_size_spectrum), intent(inout), target :: self
       integer,                            intent(in)            :: configunit
 
-      integer  :: ngrid, nsource, i, isource
+      integer  :: ngrid, nsource,nsource_start, i, isource
       real(rk) :: w_min, w_max, dlog_w
-      character(len=10)  :: strindex
+      character(len=10)  :: strindex,strindex2
       !class (type_depth_integral), pointer :: depth_integral
 
       call self%get_parameter(ngrid, 'ngrid', '', 'grid size', default=100)
       call self%get_parameter(nsource, 'nsource', '', 'number of source pools')
+      call self%get_parameter(nsource_start, 'nsource_start', '', 'start number of source')
       call self%get_parameter(w_min, 'w_min', '', 'minimum mass')
       call self%get_parameter(w_max, 'w_max', '', 'maximum mass')
 
@@ -533,10 +534,11 @@ contains
 
       do isource = 1, nsource
         write (strindex,'(i0)') isource
-        call self%register_horizontal_dependency(self%id_biomass(isource), 'source'//trim(strindex), '<SOURCE UNITS>', 'source '//trim(strindex))
+        write (strindex2,'(i0)') isource+nsource_start
+        call self%register_horizontal_dependency(self%id_biomass(isource), 'source'//trim(strindex2), '<SOURCE UNITS>', 'source '//trim(strindex2))
    !     call self%request_coupling(self%id_biomass(isource), './source'//trim(strindex)//'_integrator/result')
-        call self%get_parameter(w_min, 'w_source'//trim(strindex)//'_min', 'g', 'minimum mass of source '//trim(strindex))
-        call self%get_parameter(w_max, 'w_source'//trim(strindex)//'_max', 'g', 'maximum mass of source '//trim(strindex))
+        call self%get_parameter(w_min, 'w_source'//trim(strindex2)//'_min', 'g', 'minimum mass of source '//trim(strindex2))
+        call self%get_parameter(w_max, 'w_source'//trim(strindex2)//'_max', 'g', 'maximum mass of source '//trim(strindex2))
         do i = 1, ngrid
            if (self%mass_grid(i) >= log(w_min) .and. self%mass_grid(i) <= log(w_max)) &
               self%scale_factors(i, isource) = (min(log(w_max), self%mass_grid(i) + dlog_w/2) - max(log(w_min), self%mass_grid(i) - dlog_w/2))/(log(w_max) - log(w_min))
@@ -550,8 +552,8 @@ contains
       do i = 1, size(self%mass_grid)
          self%scale_factors(i, :) = self%scale_factors(i, :) / (exp(self%mass_grid(i) + dlog_w/2) - exp(self%mass_grid(i) - dlog_w/2))
       end do
-      call self%register_diagnostic_variable(self%id_slope, 'slope', '-', 'slope of size spectrum', source=source_do_bottom)
-      call self%register_diagnostic_variable(self%id_offset, 'offset', 'ln <SOURCE UNITS> m', 'offset of size spectrum', source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_benslope, 'benslope', '-', 'slope of size spectrum', source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_benoffset, 'benoffset', 'ln <SOURCE UNITS> m', 'offset of size spectrum', source=source_do_bottom)
    end subroutine demersal_size_spectrum_initialize
    
    subroutine demersal_size_spectrum_do_bottom(self, _ARGUMENTS_DO_BOTTOM_)
@@ -559,7 +561,7 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer  :: isource
-      real(rk) :: spectrum(size(self%mass_grid)), bm, cov, var, slope, offset, meanx, meany
+      real(rk) :: spectrum(size(self%mass_grid)), bm, cov, var, benslope, benoffset, meanx, meany
       real(rk) :: x, y, sumx, sumy, sumxy, sumxx
       integer  :: i, n
 
@@ -589,10 +591,10 @@ contains
          meany = sumy / n
          cov = sumxy / n - meanx * meany
          var = sumxx / n - meanx * meanx
-         slope = cov / var
-         offset = meany - slope * meanx
-         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_slope, slope)
-         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_offset, offset)
+         benslope = cov / var
+         benoffset = meany - benslope * meanx
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_benslope, benslope)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_benoffset, benoffset)
       _HORIZONTAL_LOOP_END_
 
    end subroutine demersal_size_spectrum_do_bottom
