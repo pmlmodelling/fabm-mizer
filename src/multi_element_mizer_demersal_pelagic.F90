@@ -679,14 +679,14 @@ contains
       call self%register_dependency(self%id_slope, 'prey_spectrum_slope', '-', 'slope of pelagic prey spectrum')
       call self%request_coupling(self%id_offset, './pelagic_size_spectrum/offset')
       call self%request_coupling(self%id_slope, './pelagic_size_spectrum/slope')
-      call self%register_dependency(self%id_benoffset, 'benthic_prey_spectrum_offset', '-', 'offset of benthic prey spectrum')
-      call self%register_dependency(self%id_benslope, 'benthic_prey_spectrum_slope', '-', 'slope of benthic prey spectrum')
-      call self%request_coupling(self%id_benoffset, './demersal_size_spectrum/benoffset')
-      call self%request_coupling(self%id_benslope, './demersal_size_spectrum/benslope')
+     ! call self%register_dependency(self%id_benoffset, 'benthic_prey_spectrum_offset', '-', 'offset of benthic prey spectrum')
+     ! call self%register_dependency(self%id_benslope, 'benthic_prey_spectrum_slope', '-', 'slope of benthic prey spectrum')
+     ! call self%request_coupling(self%id_benoffset, './demersal_size_spectrum/benoffset')
+     ! call self%request_coupling(self%id_benslope, './demersal_size_spectrum/benslope')
       
    end if
    call self%register_diagnostic_variable(self%id_R_pel,'R_pel','# m-2 d-1','recruitment',source=source_do_bottom)
-   call self%register_diagnostic_variable(self%id_R_ben,'R_ben','# m-2 d-1','recruitment',source=source_do_bottom)
+  ! call self%register_diagnostic_variable(self%id_R_ben,'R_ben','# m-2 d-1','recruitment',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_tot, 'c_tot', 'g m-2', 'total biomass', source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_size1, 'c_size1', 'g m-2', 'fish biomass smaller than threshold1', source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_size2, 'c_size2', 'g m-2', 'fish biomass smaller than threshold2', source=source_do_bottom)
@@ -969,8 +969,7 @@ contains
             g_ben(iclass) = (1-self%psi(iclass))*g_tot_ben ! Eq M7
 
             ! Mass flux towards reproduction (mmol C m-2 s-1) - sum over all individuals in this size class
-            reproduction_pel(iclass) = self%psi(iclass)*g_tot_pel*Nw(iclass)
-            reproduction_ben(iclass) = self%psi(iclass)*g_tot_ben*Nw(iclass)
+            reproduction(iclass) = (self%omega*self%psi(iclass)*g_tot_pel*Nw(iclass)) + (1._rk-self%omega)*self%psi(iclass)*g_tot_ben*Nw(iclass)
          end do
 
          ! Compute number of individuals moving from each size class to the next (units: # s-1)
@@ -980,42 +979,42 @@ contains
          ! Sum reproductive output of entire population in # m-2 s-1 (Eq 10 of Hartvig et al. 2011 JTB)
          ! Note: division by 2 is the result of the fact that reproductive output applies to females only,
          ! which are assumed to be 50% of the population.
-         total_reproduction_pel = sum(reproduction_pel)
-         total_reproduction_ben = sum(reproduction_ben)
-         R_p_pel = self%erepro/2 * total_reproduction_pel / (self%w_min/g_per_mmol_carbon)
-         R_p_ben = self%erepro/2 * total_reproduction_ben / (self%w_min_ben/g_per_mmol_carbon)
+         total_reproduction = sum(reproduction)
+        ! total_reproduction_ben = sum(reproduction_ben)
+         R_p = self%erepro/2 * total_reproduction / (self%w_min/g_per_mmol_carbon)
+       !  R_p_ben = self%erepro/2 * total_reproduction_ben / (self%w_min_ben/g_per_mmol_carbon)
 
          ! Use stock-recruitment relationship to translate density-independent recruitment into actual recruitment (units: # s-1)
          if (self%SRR==0) then
             ! Constant recruitment
-            R_pel = self%recruitment_pel
-            R_ben = self%recruitment_ben
+            R = self%recruitment_pel
+           ! R_ben = self%recruitment_ben
          elseif (self%SRR==1) then
             ! Density-independent recruitment
-            R_pel = R_p_pel
-            R_ben = R_p_ben
+            R = R_p
+          !  R_ben = R_p_ben
          elseif (self%SRR==2) then
             ! Beverton-Holt recruitment
-            R_pel = self%R_max*R_p_pel/(R_p_pel + self%R_max)
-            R_ben = self%R_max*R_p_ben/(R_p_ben + self%R_max)
+            R = self%R_max*R_p/(R_p + self%R_max)
+            !R_ben = self%R_max*R_p_ben/(R_p_ben + self%R_max)
          else
             _GET_HORIZONTAL_(self%id_offset, offset)
             _GET_HORIZONTAL_(self%id_slope, slope)
-            _GET_HORIZONTAL_(self%id_benoffset, benoffset)
-            _GET_HORIZONTAL_(self%id_benslope, benslope)
-            endpoint_pel = offset + slope * log(self%w_min)
-            endpoint_ben= benoffset + benslope * log(self%w_min_ben)
-            expected_eggs_pel= exp(endpoint_pel) * self%delta_w(1)
-            expected_eggs_ben= exp(endpoint_ben) * self%delta_w(1)
-            R_pel = max(expected_eggs_pel - Nw(1), 0._rk)/(self%w_min/g_per_mmol_carbon) * self%R_relax
+          !  _GET_HORIZONTAL_(self%id_benoffset, benoffset)
+          !  _GET_HORIZONTAL_(self%id_benslope, benslope)
+            endpoint = offset + slope * log(self%w_min)
+          !  endpoint_ben= benoffset + benslope * log(self%w_min_ben)
+            expected_eggs= exp(endpoint_pel) * self%delta_w(1)
+          !  expected_eggs_ben= exp(endpoint_ben) * self%delta_w(1)
+            R = max(expected_eggs - Nw(1), 0._rk)/(self%w_min/g_per_mmol_carbon) * self%R_relax
             
             !HP:need to think about whether want to use first size class for benthic fish
-            R_ben = max(expected_eggs_ben - Nw(1), 0._rk)/(self%w_min_ben/g_per_mmol_carbon) * self%R_relax
+           ! R_ben = max(expected_eggs_ben - Nw(1), 0._rk)/(self%w_min_ben/g_per_mmol_carbon) * self%R_relax
          end if
 
          ! Use recruitment as number of incoming individuals for the first size class.
-         nflux_pel(0) = R_pel
-         nflux_ben(0) = R_ben
+         nflux_pel(0) = R
+       !  nflux_ben(0) = R_ben
 
          ! Destroy all prey constituents that we are aware of (we only need to destroy carbon
          ! to get the correct impact on prey, but by destroying all we enable conservation checks)
