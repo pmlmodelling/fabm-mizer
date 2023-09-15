@@ -22,6 +22,8 @@ module mizer_multi_element_demersal_pelagic_population
 ! as in Sheldon's original postulate. This quantity can be converted to a biomass density (g g-1) by dividing
 ! by the bin width (in g), and to abundance density (# g-1) by further dividing by the individual biomass (g)
 ! at the centre of the bin. Note that each division roughly corresponds to a decrease of 1 in spectrum slope.
+
+!Hp note: Here MIZER is run in units of mmol C m-2 s-1. Model outputs for fish (fish_c_tot, fish_c_size1,..., fish_landings) are given in units of wet weight. Diagnostics are converted individually to per day either here or in multi element support. Unit conversion between mmolC and g wet weight are given below. 
 !
 ! !USES:
    use fabm_types
@@ -166,7 +168,7 @@ module mizer_multi_element_demersal_pelagic_population
 
       ! Size-class-dependent parameters that will be precomputed during initialization
       real(rk), allocatable :: V(:)            ! volumetric search rate (Eq M2)
-      real(rk), allocatable :: VB(:)            ! volumetric search rate (Eq M2)
+      real(rk), allocatable :: VB(:)            ! benthic volumetric search rate (Eq M2)
       real(rk), allocatable :: I_max(:)        ! maximum ingestion rate (Eq M4)
       real(rk), allocatable :: std_metab(:)    ! standard metabolism (k*w^p in Eq M7)
       real(rk), allocatable :: mu_b(:)         ! background mortality (temperature dependent)
@@ -191,6 +193,7 @@ module mizer_multi_element_demersal_pelagic_population
    real(rk) :: Kelvin = 273.15_rk      ! offset of Celsius temperature scale (K)
    real(rk) :: Boltzmann = 8.62e-5_rk  ! Boltzmann constant
    real(rk) :: g_per_mmol_carbon = 0.12_rk ! assume 10% of wet mass is carbon. 1 mmol carbon = 0.012 g, so that is equivalent to 0.12 g wet mass
+   real(rk) :: CMass = 12.011_rk !Taken from ERSEM shared.F90
 !
 !EOP
 !-----------------------------------------------------------------------
@@ -214,7 +217,7 @@ contains
    integer            :: iclass, iprey
    logical            :: cannibalism, biomass_has_prey_unit
    real(rk)           :: delta_logw
-   real(rk)           :: k_vb,n,q,p,w_mat,w_inf,gamma,gammaB,h,ks,f0,z0,omega
+   real(rk)           :: k_vb,n,q,qb, p,w_mat,w_inf,gamma,gammaB,h,ks,f0,z0,omega
    real(rk)           :: z0pre,z0exp,w_s,z_s,z_spre
    real(rk)           :: kappa,lambda
    real(rk)           :: T_ref
@@ -233,7 +236,7 @@ contains
    class (type_depth_integral),       pointer :: depth_integral
    class (type_product),              pointer :: product
    class (type_pelagic_size_spectrum),pointer :: pelagic_size_spectrum
-   class (type_demersal_size_spectrum),pointer :: demersal_size_spectrum
+   !class (type_demersal_size_spectrum),pointer :: demersal_size_spectrum
    logical, parameter :: report_statistics = .false.
 !EOP
 !-----------------------------------------------------------------------
@@ -253,6 +256,7 @@ contains
    call self%get_parameter(self%w_min_ben, 'w_min_ben',  'g',    'egg mass',                           default=0.001_rk, minimum=0.0_rk)
    call self%get_parameter(n,          'n',      '-',    'exponent of max. consumption',       default=2.0_rk/3.0_rk)
    call self%get_parameter(q,          'q',      '-',    'exponent of search volume',          default=0.8_rk)
+   call self%get_parameter(qB,          'qB',      '-',    'benthic exponent of search volume',          default=q)
    call self%get_parameter(p,          'p',      '-',    'exponent of standard metabolism',    default=0.7_rk)
    call self%get_parameter(z0_type,    'z0_type','',     'type of background mortality (0: constant, 1: allometric function of size)', default=0)
    call self%get_parameter(z0pre,      'z0pre',  'yr-1', 'pre-factor for background mortality (= mortality at 1 g)',default=0.6_rk,   minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
@@ -363,7 +367,7 @@ contains
    allocate(self%VB(self%nclass))
    self%V(:) = gamma*self%w**(q-1)      ! specific volumetric search rate [m3 s-1 g-1] (mass-specific, hence the -1!)
    self%V = self%V * g_per_mmol_carbon  ! express volumetric search rate per mmol carbon (instead of per g)
-   self%VB(:) = gammaB*self%w**(q-1)      ! specific volumetric search rate [m3 s-1 g-1] (mass-specific, hence the -1!)
+   self%VB(:) = gammaB*self%w**(qB-1)      ! specific volumetric search rate [m3 s-1 g-1] (mass-specific, hence the -1!)
    self%VB = self%VB * g_per_mmol_carbon  ! express volumetric search rate per mmol carbon (instead of per g)
    
    self%I_max(:) = h*self%w**(n-1)      ! specific maximum ingestion rate [s-1]; Eq M4, but specific, hence the -1!
@@ -450,11 +454,11 @@ contains
    call pelagic_size_spectrum%parameters%set_real('w_min', self%w_min/self%beta**2)
    call pelagic_size_spectrum%parameters%set_real('w_max', self%w_min)
     
-   allocate (demersal_size_spectrum)
-   call demersal_size_spectrum%parameters%set_integer('nsource', self%nbenprey)
-   call demersal_size_spectrum%parameters%set_integer('nsource_start', self%npelprey)
-   call demersal_size_spectrum%parameters%set_real('w_min', self%w_min_ben/self%beta**2)
-   call demersal_size_spectrum%parameters%set_real('w_max', self%w_min_ben)
+  ! allocate (demersal_size_spectrum)
+  ! call demersal_size_spectrum%parameters%set_integer('nsource', self%nbenprey)
+  ! call demersal_size_spectrum%parameters%set_integer('nsource_start', self%npelprey)
+  ! call demersal_size_spectrum%parameters%set_real('w_min', self%w_min_ben/self%beta**2)
+  ! call demersal_size_spectrum%parameters%set_real('w_max', self%w_min_ben)
    
    allocate (self%id_bprey_c(self%nbenprey ))
    allocate (self%id_bprey_n(self%nbenprey ))
@@ -509,14 +513,14 @@ contains
         !   call self%register_dependency(self%id_pelprey_c(iprey), 'pelprey_c'//trim(strindex), 'mmol C m-2', 'carbon in demersal prey '//trim(strindex))
       !     call self%request_coupling_to_model(self%id_pelprey_c(iprey), 'prey'//trim(strindex), standard_variables%total_carbon)    
           ! call total_pelprey_calculator%add_component('pelprey_c'//trim(strindex)) 
-           call self%register_horizontal_dependency(self%id_benprey_c(b), 'benprey_c'//trim(strindex2), 'mmol C m-2', 'carbon in benthic prey '//trim(strindex2)) 
-           call self%register_horizontal_dependency(self%id_benprey_n(b), 'benprey_n'//trim(strindex2), 'mmol C m-2', 'carbon in benthic prey '//trim(strindex2)) 
-           call self%register_horizontal_dependency(self%id_benprey_p(b), 'benprey_p'//trim(strindex2), 'mmol C m-2', 'carbon in benthic prey '//trim(strindex2)) 
-           call self%register_horizontal_dependency(self%id_benprey_s(b), 'benprey_s'//trim(strindex2), 'mmol C m-2', 'carbon in benthic prey '//trim(strindex2)) 
-           call self%request_coupling_to_model(self%id_benprey_c(b), 'prey'//trim(strindex), standard_variables%total_carbon)
-           call self%request_coupling_to_model(self%id_benprey_n(b), 'prey'//trim(strindex), standard_variables%total_nitrogen)
-           call self%request_coupling_to_model(self%id_benprey_p(b), 'prey'//trim(strindex), standard_variables%total_phosphorus)
-           call self%request_coupling_to_model(self%id_benprey_s(b), 'prey'//trim(strindex), standard_variables%total_silicate)
+         !  call self%register_horizontal_dependency(self%id_benprey_c(b), 'benprey_c'//trim(strindex2), 'mmol C m-2', 'carbon in benthic prey '//trim(strindex2)) 
+         !  call self%register_horizontal_dependency(self%id_benprey_n(b), 'benprey_n'//trim(strindex2), 'mmol C m-2', 'carbon in benthic prey '//trim(strindex2)) 
+         !  call self%register_horizontal_dependency(self%id_benprey_p(b), 'benprey_p'//trim(strindex2), 'mmol C m-2', 'carbon in benthic prey '//trim(strindex2)) 
+         !  call self%register_horizontal_dependency(self%id_benprey_s(b), 'benprey_s'//trim(strindex2), 'mmol C m-2', 'carbon in benthic prey '//trim(strindex2)) 
+          ! call self%request_coupling_to_model(self%id_benprey_c(b), 'prey'//trim(strindex), standard_variables%total_carbon)
+        !   call self%request_coupling_to_model(self%id_benprey_n(b), 'prey'//trim(strindex), standard_variables%total_nitrogen)
+        !   call self%request_coupling_to_model(self%id_benprey_p(b), 'prey'//trim(strindex), standard_variables%total_phosphorus)
+        !   call self%request_coupling_to_model(self%id_benprey_s(b), 'prey'//trim(strindex), standard_variables%total_silicate)
            !call self%request_coupling(self%id_prey_c(iprey), 'benprey'//trim(strindex2)//'_depth_average/c')
            !call self%request_coupling(self%id_prey_n(iprey), 'benprey'//trim(strindex2)//'_depth_average/n')
            !call self%request_coupling(self%id_prey_p(iprey), 'benprey'//trim(strindex2)//'_depth_average/p')
@@ -539,11 +543,11 @@ contains
            call self%set_variable_property(self%id_prey_c(iprey), 'max_particle_mass', w_prey_max) 
  !      call depth_averaged_prey%set_variable_property(depth_averaged_prey%id_c, 'min_particle_mass', w_prey_min)
  !      call depth_averaged_prey%set_variable_property(depth_averaged_prey%id_c, 'max_particle_mass', w_prey_max)          
-           call demersal_size_spectrum%parameters%set_real('w_source'//trim(strindex)//'_min', w_prey_min)
-           call demersal_size_spectrum%parameters%set_real('w_source'//trim(strindex)//'_max', w_prey_max)
-           call demersal_size_spectrum%couplings%set_string('source'//trim(strindex), '../benprey_c'//trim(strindex2))      
+      !     call demersal_size_spectrum%parameters%set_real('w_source'//trim(strindex)//'_min', w_prey_min)
+       !    call demersal_size_spectrum%parameters%set_real('w_source'//trim(strindex)//'_max', w_prey_max)
+       !    call demersal_size_spectrum%couplings%set_string('source'//trim(strindex), '../benprey_c'//trim(strindex2))      
 
-           call self%register_diagnostic_variable(self%id_bprey_c(b),'bprey'//trim(strindex)//'c','mmol C/m^2/d',   'uptake of carbon in food source '//trim(strindex),    source=source_do_bottom)
+           call self%register_diagnostic_variable(self%id_bprey_c(b),'bprey'//trim(strindex)//'c','mg C/m^2/d',   'uptake of carbon in food source '//trim(strindex),    source=source_do_bottom)
            call self%register_diagnostic_variable(self%id_bprey_n(b),'bprey'//trim(strindex)//'n','mmol C/m^2/d',   'uptake of nitrogen in food source '//trim(strindex),    source=source_do_bottom)
            call self%register_diagnostic_variable(self%id_bprey_p(b),'bprey'//trim(strindex)//'p','mmol C/m^2/d',   'uptake of phosphorus in food source '//trim(strindex),    source=source_do_bottom)
            call self%register_diagnostic_variable(self%id_bprey_s(b),'bprey'//trim(strindex)//'s','mmol C/m^2/d',   'uptake of silicon in food source '//trim(strindex),    source=source_do_bottom)
@@ -582,7 +586,7 @@ contains
      end if
    end do
    call self%add_child(pelagic_size_spectrum, 'pelagic_size_spectrum', configunit=-1)
-   call self%add_child(demersal_size_spectrum, 'demersal_size_spectrum', configunit=-1)
+  ! call self%add_child(demersal_size_spectrum, 'demersal_size_spectrum', configunit=-1)
 
    call self%add_child(total_pelprey_calculator,'total_pelprey_calculator',configunit=-1)
 
@@ -792,12 +796,7 @@ contains
          w_p_min = self%id_prey_c(iprey)%link%target%properties%get_real('min_particle_mass', -1._rk)
          w_p_max = self%id_prey_c(iprey)%link%target%properties%get_real('max_particle_mass', -1._rk)
          
-        !if self%prey(iprey)%ispel .eq. false 
-!                self%V(iprey,:) = gammaB*self%w**(qB-1)      ! specific volumetric search rate [m3 s-1 g-1] (mass-specific, hence the -1!)         
-!        else: 
-!                self%V(iprey,:) = gammaP*self%w**(qP-1)      ! specific volumetric search rate [m3 s-1 g-1] (mass-specific, hence the -1!) 
-         !   end if   
-!            self%V = self%V * g_per_mmol_carbon  ! express volumetric search rate per mmol carbon (instead of per g)         
+      
          if (w_p_min > 0 .and. w_p_max > 0) then
             ! A size range (minimum wet mass - maximum wet mass) for this prey is given.
             ! We assume that within this range, biomass is uniformly distributed in log wet mass - log total biomass space (= a Sheldon size spectrum)
@@ -822,7 +821,7 @@ contains
 
          elseif (w_p > 0) then
             ! A single size (wet mass) for this prey is given.
-            ! Compute size-class-specific preference for current prey;   prey_loss(:) = prey_loss(:) + I_c(iclass)/E_a_c*self%phi(:,iclass)*Nw(iclass) *self%V(:,iclass).....Eq 4 in Hartvig et al. 2011 JTB, but note sigma typo confirmed by KH Andersen
+            ! Compute size-class-specific preference for current prey;  Eq 4 in Hartvig et al. 2011 JTB, but note sigma typo confirmed by KH Andersen
             ! This is a log-normal distribution of prey mass, scaled such that at optimum prey mass (=predator mass/beta), the preference equals 1.
             ! sigma is the standard deviation in ln mass units.
             do iclass=1, self%nclass
@@ -1078,15 +1077,13 @@ contains
          end if
 
          ! Use recruitment as number of incoming individuals for the first size class.
+         !HP: need to figure put how to get recruitment so it is not impacted by omega!
          nflux_pel(0) = R
       !   nflux_ben(0) = R
 
          ! Destroy all prey constituents that we are aware of (we only need to destroy carbon
          ! to get the correct impact on prey, but by destroying all we enable conservation checks)
-         b=0._rk
-         
-
-         
+         b=0._rk      
                   
          
          do iprey = 1, self%nprey
@@ -1110,10 +1107,10 @@ contains
                     !   _SET_BOTTOM_ODE_(self%id_prey_n(iprey),  -(1._rk-self%omega)*prey_loss_ben(iprey)*prey_n(iprey))
                     !   _SET_BOTTOM_ODE_(self%id_prey_p(iprey),  -(1._rk-self%omega)*prey_loss_ben(iprey)*prey_p(iprey))
                     !  _SET_BOTTOM_ODE_(self%id_prey_s(iprey),  -(1._rk-self%omega)*prey_loss_ben(iprey)*prey_s(iprey))
-                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_c(b),  -(1._rk-omega)*prey_loss_ben(iprey)*prey_c(iprey))
-                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_n(b),  -(1._rk-omega)*prey_loss_ben(iprey)*prey_n(iprey))
-                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_p(b),  -(1._rk-omega)*prey_loss_ben(iprey)*prey_p(iprey))
-                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_s(b),  -(1._rk-omega)*prey_loss_ben(iprey)*prey_s(iprey))
+                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_c(b),  -(1._rk-omega)*prey_loss_ben(iprey)*prey_c(iprey)*86400*CMass) 
+                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_n(b),  -(1._rk-omega)*prey_loss_ben(iprey)*prey_n(iprey)*86400)
+                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_p(b),  -(1._rk-omega)*prey_loss_ben(iprey)*prey_p(iprey)*86400)
+                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_s(b),  -(1._rk-omega)*prey_loss_ben(iprey)*prey_s(iprey)*86400)
                    else
                        _SET_BOTTOM_ODE_(self%id_prey_c(iprey), -omega*prey_loss_pel(iprey)*prey_c(iprey))
                        _SET_BOTTOM_ODE_(self%id_prey_n(iprey), -omega*prey_loss_pel(iprey)*prey_n(iprey))
@@ -1173,13 +1170,13 @@ contains
             
             _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_s,sum(I_s_ben*Nw)*(1._rk-omega))
             
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIP,  (1._rk-omega)*(1-self%alpha-self%alpha_eg)*sum(I_p_ben*Nw))
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_benO2_fish,  (1._rk-omega)*self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw)) 
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIC,  (1._rk-omega)*(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw))
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIN, (1._rk-omega)*(1-self%alpha-self%alpha_eg)*sum(I_n_ben*Nw))
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOC, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben - g_ben/(1-self%psi)          )*Nw)          + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)*(1._rk-omega))
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPON, (sum(((self%alpha+self%alpha_eg)*I_n_ben + (mu_ben - g_ben/(1-self%psi))*self%qnc)*Nw) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)*(1._rk-omega))
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOP,(sum(((self%alpha+self%alpha_eg)*I_p_ben + (mu_ben - g_ben/(1-self%psi))*self%qpc)*Nw)  + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)*(1._rk-omega))
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIP,  (1._rk-omega)*(1-self%alpha-self%alpha_eg)*sum(I_p_ben*Nw)*86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_benO2_fish,  (1._rk-omega)*self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw)*86400) 
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIC,  (1._rk-omega)*(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw)*86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIN, (1._rk-omega)*(1-self%alpha-self%alpha_eg)*sum(I_n_ben*Nw)*86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOC, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben - g_ben/(1-self%psi)          )*Nw)          + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)*(1._rk-omega)*86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPON, (sum(((self%alpha+self%alpha_eg)*I_n_ben + (mu_ben - g_ben/(1-self%psi))*self%qnc)*Nw) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)*(1._rk-omega)*86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOP,(sum(((self%alpha+self%alpha_eg)*I_p_ben + (mu_ben - g_ben/(1-self%psi))*self%qpc)*Nw)  + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)*(1._rk-omega)*86400)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOS,sum(I_s_ben*Nw)*(1._rk-omega))
   
             
