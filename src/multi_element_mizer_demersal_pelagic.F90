@@ -115,7 +115,7 @@ module mizer_multi_element_demersal_pelagic_population
 
       type (type_horizontal_dependency_id)                      :: id_T_w_int
       type (type_horizontal_dependency_id)                      :: id_w_int
-      type (type_horizontal_diagnostic_variable_id)             :: id_T_ave, id_omega
+      type (type_horizontal_diagnostic_variable_id)             :: id_T_ave 
       type (type_horizontal_diagnostic_variable_id)             :: id_c_tot
       type (type_horizontal_diagnostic_variable_id)             :: id_c_size1
       type (type_horizontal_diagnostic_variable_id)             :: id_c_size2
@@ -123,6 +123,7 @@ module mizer_multi_element_demersal_pelagic_population
       type (type_horizontal_diagnostic_variable_id)             :: id_c_lfi
       type (type_horizontal_diagnostic_variable_id)             :: id_test
       type (type_horizontal_diagnostic_variable_id), allocatable:: id_bprey_c(:), id_bprey_n(:),id_bprey_p(:),id_bprey_s(:)
+      type (type_horizontal_diagnostic_variable_id)             :: id_omega_dia
       type (type_horizontal_diagnostic_variable_id)             :: id_fish_benDIP,id_fish_benDIC, id_fish_benDIN, id_benO2_fish
       type (type_horizontal_diagnostic_variable_id)             :: id_fish_benPOC, id_fish_benPON, id_fish_benPOP, id_fish_benPOS
 
@@ -155,7 +156,7 @@ module mizer_multi_element_demersal_pelagic_population
       real(rk) :: qnc         ! nitrogen:carbon ratio (mol:mol, constant)
       real(rk) :: qpc         ! phosphorus:carbon ratio (mol:mol, constant)
       real(rk) :: alpha_eg    ! fraction of food that is egested
-      real(rk) :: omega    ! fraction of time that fish spend in pelagic
+      real(rk) :: omega, omega_threshold    ! fraction of time that fish spend in pelagic
 
       integer  :: T_dependence ! Type of temperature dependence (0: none, 1: Arrhenius)
       real(rk) :: c1           ! Reference constant in Arrhenius equation = E_a/k/(T_ref+Kelvin)
@@ -164,7 +165,7 @@ module mizer_multi_element_demersal_pelagic_population
 
       logical :: feedback
       logical :: isben        ! Argument to define whether resource is pelagic or benthic
-      logical :: emergent_omega
+      logical :: emergent_omega, omega_size
 
       ! Size-class-dependent parameters that will be precomputed during initialization
       real(rk), allocatable :: V(:)            ! volumetric search rate (Eq M2)
@@ -178,6 +179,7 @@ module mizer_multi_element_demersal_pelagic_population
       real(rk), allocatable :: phi(:,:)        ! prey preference
       real(rk), allocatable :: pelspec(:)        ! prey available to pelagic fish
       real(rk), allocatable :: benspec(:)        ! prey available to benthic fish
+
             
 
       real(rk) :: c0_proxy_width
@@ -200,6 +202,7 @@ module mizer_multi_element_demersal_pelagic_population
 
 contains
 
+
 !-----------------------------------------------------------------------
 !BOP
 !
@@ -217,7 +220,7 @@ contains
    integer            :: iclass, iprey
    logical            :: cannibalism, biomass_has_prey_unit
    real(rk)           :: delta_logw
-   real(rk)           :: k_vb,n,q,qb, p,w_mat,w_inf,gamma,gammaB,h,ks,f0,z0,omega
+   real(rk)           :: k_vb,n,q,qb, p,w_mat,w_inf,gamma,gammaB,h,ks,f0,z0
    real(rk)           :: z0pre,z0exp,w_s,z_s,z_spre
    real(rk)           :: kappa,lambda
    real(rk)           :: T_ref
@@ -340,10 +343,12 @@ contains
 
    call self%get_parameter(z0, 'z0', 'yr-1', 'background mortality', minimum=0.0_rk, default=z0pre*w_inf**z0exp*sec_per_year, scale_factor=1._rk/sec_per_year)
    call self%get_parameter(self%emergent_omega,'emergent_omega','-',          'use emergent omega', default=.false.)
+   call self%get_parameter(self%omega_size,'omega_size','-',          'use of size dependant omega', default=.false.)
    if (self%emergent_omega .eqv. .false. )    call self%get_parameter(self%omega,      'omega',  '-',    'fraction of time that fish spend in the pelagic',  minimum=0.0_rk, maximum=1.0_rk,default=1.0_rk)
+   if (self%omega_size)    call self%get_parameter(self%omega_threshold,      'omega_threshold',  '-',    'size of fish above which spend some time in the benthos',  minimum=self%w_min, maximum=w_inf)
    
-   
-    call self%register_diagnostic_variable(self%id_omega, 'omega' ,'-', 'time fish spend in the pelagic', source=source_do_bottom)
+!    allocate (self%id_omega_dia(self%nclass))
+    call self%register_diagnostic_variable(self%id_omega_dia, 'omega_dia' ,'-', 'time fish spend in the pelagic', source=source_do_bottom)
     
    ! Determine size classes (log-spaced between size at birth and infinite size)
    allocate(self%logw(self%nclass))
@@ -365,6 +370,7 @@ contains
    allocate(self%psi(self%nclass))
    allocate(self%V(self%nclass))
    allocate(self%VB(self%nclass))
+   
    self%V(:) = gamma*self%w**(q-1)      ! specific volumetric search rate [m3 s-1 g-1] (mass-specific, hence the -1!)
    self%V = self%V * g_per_mmol_carbon  ! express volumetric search rate per mmol carbon (instead of per g)
    self%VB(:) = gammaB*self%w**(qB-1)      ! specific volumetric search rate [m3 s-1 g-1] (mass-specific, hence the -1!)
@@ -384,7 +390,7 @@ contains
       self%mu_s = 0
    end if
    
-
+   
    
    ! Fishing mortality
    self%F = 0.0_rk
@@ -464,6 +470,7 @@ contains
    allocate (self%id_bprey_n(self%nbenprey ))
    allocate (self%id_bprey_p(self%nbenprey))
    allocate (self%id_bprey_s(self%nbenprey))
+   
 
    ! Register dependencies for all prey.
    ! If the population is cannibalistic, autoamtically add all our size classes to the set of prey types.
@@ -703,7 +710,7 @@ contains
    call self%register_diagnostic_variable(self%id_fish_benDIN,'fish_benDIN','mmol m-2 d-1','benthic fish excretion to DIN',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_fish_benDIC,'fish_benDIC','mmol m-2 d-1','benthic fish production of DIC from respiration',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_benO2_fish,'benO2_fish','mmol m-2 d-1','benthic fish consumption of O2 during repisration',source=source_do_bottom)
-   call self%register_diagnostic_variable(self%id_fish_benPOC,'fish_benPOC','mmol m-2 d-1','benthic fish egestion of POC',source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_fish_benPOC,'fish_benPOC','mg m-2 d-1','benthic fish egestion of POC',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_fish_benPON,'fish_benPON','mmol m-2 d-1','benthic fish egestion of PON',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_fish_benPOP,'fish_benPOP','mmol m-2 d-1','benthic fish egestion of POP',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_fish_benPOS,'fish_benPOS','mmol m-2 d-1','benthic fish egestion of POS',source=source_do_bottom)
@@ -850,12 +857,13 @@ contains
       real(rk) :: nflux_pel(0:self%nclass),nflux_ben(0:self%nclass),prey_state
       real(rk) :: E_e_pel,E_a_c_pel,E_a_n_pel,E_a_p_pel,E_a_s_pel,E_e_ben,E_a_c_ben,E_a_n_ben,E_a_p_ben,E_a_s_ben
       real(rk) :: f_pel,f_ben
-      real(rk) :: ETW,b, omega,total_ben_prey
+      real(rk) :: ETW,b, omega_c,total_ben_prey
       real(rk) :: g_tot_c_pel,g_tot_n_pel,g_tot_p_pel,g_tot_c_ben,g_tot_n_ben,g_tot_p_ben
       real(rk),dimension(self%nprey)  :: prey_c,prey_n,prey_p,prey_s,prey_loss_pel, prey_loss_ben
-      real(rk),dimension(self%nclass) :: Nw,I_c_pel, I_c_ben,I_n_pel,I_p_pel,I_s_pel,I_n_ben,I_p_ben,I_s_ben
+      real(rk),dimension(self%nclass) :: Nw,I_c_pel, I_c_ben,I_n_pel,I_p_pel,I_s_pel,I_n_ben,I_p_ben,I_s_ben, omega
       real(rk),dimension(self%nclass) :: mu_pel,reproduction,maintenance_pel,g_pel,maintenance_ben,g_ben,mu_ben
       real(rk), parameter :: delta_t = 900
+
 
       _HORIZONTAL_LOOP_BEGIN_
 
@@ -911,12 +919,26 @@ contains
                       total_ben_prey=total_ben_prey+prey_c(iprey)
                   end if
              end do
-             omega=w_int/(w_int+total_ben_prey)
+             omega_c=w_int/(w_int+total_ben_prey)
               
          else
-             omega=self%omega
+             omega_c=self%omega
           end if
-          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_omega, omega)
+          
+          do iclass=1,self%nclass
+              if (self%omega_size) then
+                  if (self%w(iclass) > self%omega_threshold) then
+                     omega(iclass)= omega_c
+                  else
+                     omega(iclass)=1._rk
+                  end if
+              else
+                 omega(iclass)=omega_c
+              end if
+          end do
+         ! omega(1)=1._rk   ! Ensure that recruitment only goes into pelagic 
+       !   PRINT*, omega
+       !   _SET_HORIZONTAL_DIAGNOSTIC_(self%id_omega_dia, omega)
           
          ! Food uptake (all size classes, all prey types)
          ! This computes total ingestion per size class (over all prey), and total loss per prey type (over all size classes)
@@ -977,8 +999,12 @@ contains
             !HP: Add array for whether the resource is pelagic or benthic. Stops benthic fish eating pelagic plankton and pelagic fish eating benthos. Loss still needs to be normalised to percentage of time that fish is in pelagic vs benthic systems
   
             
-            prey_loss_pel(:) = prey_loss_pel(:) + I_c_pel(iclass)/E_a_c_pel*self%phi(:,iclass)*Nw(iclass)
-            prey_loss_ben(:) = prey_loss_ben(:) + I_c_ben(iclass)/E_a_c_ben*self%phi(:,iclass)*Nw(iclass)
+            prey_loss_pel(:) = prey_loss_pel(:) + I_c_pel(iclass)/E_a_c_pel*self%phi(:,iclass)*Nw(iclass)*omega(iclass)
+            if (omega(iclass)/=1) then
+                 prey_loss_ben(:) = prey_loss_ben(:) + I_c_ben(iclass)/E_a_c_ben*self%phi(:,iclass)*Nw(iclass)*(1-omega(iclass))
+            else
+                 prey_loss_ben(:) = prey_loss_ben(:)
+            end if
          end do
 
 #ifndef NDEBUG
@@ -1029,7 +1055,7 @@ contains
             g_ben(iclass) = (1-self%psi(iclass))*g_tot_ben ! Eq M7
 
             ! Mass flux towards reproduction (mmol C m-2 s-1) - sum over all individuals in this size class
-            reproduction(iclass) = (omega*self%psi(iclass)*g_tot_pel*Nw(iclass)) + (1._rk-omega)*self%psi(iclass)*g_tot_ben*Nw(iclass)
+            reproduction(iclass) = (omega(iclass)*self%psi(iclass)*g_tot_pel*Nw(iclass)) + (1._rk-omega(iclass))*self%psi(iclass)*g_tot_ben*Nw(iclass)
          end do
 
 
@@ -1077,19 +1103,21 @@ contains
          end if
 
          ! Use recruitment as number of incoming individuals for the first size class.
-         !HP: need to figure put how to get recruitment so it is not impacted by omega!
          nflux_pel(0) = R
       !   nflux_ben(0) = R
 
          ! Destroy all prey constituents that we are aware of (we only need to destroy carbon
          ! to get the correct impact on prey, but by destroying all we enable conservation checks)
-         b=0._rk      
+         b=0._rk
+         
+
+         
                   
          
          do iprey = 1, self%nprey
             if (iprey > self%nprey - self%nclass) then
                ! Prey is one of our own size classes
-               _SET_BOTTOM_ODE_(self%id_prey_c(iprey), -omega*(prey_loss_pel(iprey)*prey_c(iprey)) -(1._rk-omega)*prey_loss_ben(iprey)*prey_c(iprey))
+               _SET_BOTTOM_ODE_(self%id_prey_c(iprey), -(prey_loss_pel(iprey)*prey_c(iprey)) - prey_loss_ben(iprey)*prey_c(iprey))
                
                
                !HP: NEED TO CHANGE
@@ -1103,19 +1131,19 @@ contains
                    !      _SET_ODE_(self%id_prey(iprey)%state(istate),-(1._rk-self%omega)*prey_loss_ben(iprey)*preyP)
                    !    end do
                    ! HP: only set ODE for carbon because that is only variable associated with YX (and Hx) - P and N are also automatically changed due to it having a constant stoichometry
-                       _SET_BOTTOM_ODE_(self%id_prey_c(iprey),  -(1._rk-omega)*prey_loss_ben(iprey)*prey_c(iprey))
+                       _SET_BOTTOM_ODE_(self%id_prey_c(iprey),  -prey_loss_ben(iprey)*prey_c(iprey))
                     !   _SET_BOTTOM_ODE_(self%id_prey_n(iprey),  -(1._rk-self%omega)*prey_loss_ben(iprey)*prey_n(iprey))
                     !   _SET_BOTTOM_ODE_(self%id_prey_p(iprey),  -(1._rk-self%omega)*prey_loss_ben(iprey)*prey_p(iprey))
                     !  _SET_BOTTOM_ODE_(self%id_prey_s(iprey),  -(1._rk-self%omega)*prey_loss_ben(iprey)*prey_s(iprey))
-                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_c(b),  -(1._rk-omega)*prey_loss_ben(iprey)*prey_c(iprey)*86400*CMass) 
-                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_n(b),  -(1._rk-omega)*prey_loss_ben(iprey)*prey_n(iprey)*86400)
-                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_p(b),  -(1._rk-omega)*prey_loss_ben(iprey)*prey_p(iprey)*86400)
-                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_s(b),  -(1._rk-omega)*prey_loss_ben(iprey)*prey_s(iprey)*86400)
+                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_c(b),  -prey_loss_ben(iprey)*prey_c(iprey)*86400*CMass) 
+                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_n(b),  -prey_loss_ben(iprey)*prey_n(iprey)*86400)
+                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_p(b),  -prey_loss_ben(iprey)*prey_p(iprey)*86400)
+                       _SET_HORIZONTAL_DIAGNOSTIC_(self%id_bprey_s(b),  -prey_loss_ben(iprey)*prey_s(iprey)*86400)
                    else
-                       _SET_BOTTOM_ODE_(self%id_prey_c(iprey), -omega*prey_loss_pel(iprey)*prey_c(iprey))
-                       _SET_BOTTOM_ODE_(self%id_prey_n(iprey), -omega*prey_loss_pel(iprey)*prey_n(iprey))
-                       _SET_BOTTOM_ODE_(self%id_prey_p(iprey), -omega*prey_loss_pel(iprey)*prey_p(iprey))
-                       _SET_BOTTOM_ODE_(self%id_prey_s(iprey), -omega*prey_loss_pel(iprey)*prey_s(iprey))                                      
+                       _SET_BOTTOM_ODE_(self%id_prey_c(iprey), -prey_loss_pel(iprey)*prey_c(iprey))
+                       _SET_BOTTOM_ODE_(self%id_prey_n(iprey), -prey_loss_pel(iprey)*prey_n(iprey))
+                       _SET_BOTTOM_ODE_(self%id_prey_p(iprey), -prey_loss_pel(iprey)*prey_p(iprey))
+                       _SET_BOTTOM_ODE_(self%id_prey_s(iprey), -prey_loss_pel(iprey)*prey_s(iprey))                                      
                    end if
             end if
          end do
@@ -1126,8 +1154,8 @@ contains
          ! Transfer size-class-specific source terms and diagnostics to FABM
          do iclass=1,self%nclass
             ! Apply specific mortality (s-1) to size-class-specific abundances and apply upwind advection - this is a time-explicit version of Eq G.1 of Hartvig et al.
-            _SET_BOTTOM_ODE_(self%id_c(iclass),(-(mu_pel(iclass) + self%F(iclass))*Nw(iclass) + (nflux_pel(iclass-1)-nflux_pel(iclass))*self%w(iclass)/g_per_mmol_carbon)*omega)
-            _SET_BOTTOM_ODE_(self%id_c(iclass),(-(mu_ben(iclass) + self%F(iclass))*Nw(iclass) + (nflux_ben(iclass-1)-nflux_ben(iclass))*self%w(iclass)/g_per_mmol_carbon)*(1._rk-omega))
+            _SET_BOTTOM_ODE_(self%id_c(iclass),(-(mu_pel(iclass) + self%F(iclass))*Nw(iclass) + (nflux_pel(iclass-1)-nflux_pel(iclass))*self%w(iclass)/g_per_mmol_carbon)*omega(iclass))
+            _SET_BOTTOM_ODE_(self%id_c(iclass),(-(mu_ben(iclass) + self%F(iclass))*Nw(iclass) + (nflux_ben(iclass-1)-nflux_ben(iclass))*self%w(iclass)/g_per_mmol_carbon)*(1._rk-omega(iclass)))
             
             
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g_pel(iclass),g_pel(iclass)*86400)
@@ -1149,35 +1177,35 @@ contains
 
          ! Compute waste fluxes: total ingestion plus mortality, minus mass used in growth, minus recruitment, plus growth over right edge of resolved size range.
          if (self%feedback) then
-            _SET_BOTTOM_ODE_(self%id_o2,-omega*self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c_pel*Nw))            
-            _SET_BOTTOM_ODE_(self%id_dic,omega*(1-self%alpha-self%alpha_eg)*sum(I_c_pel*Nw))
-            _SET_BOTTOM_ODE_(self%id_din,omega*(1-self%alpha-self%alpha_eg)*sum(I_n_pel*Nw))
-            _SET_BOTTOM_ODE_(self%id_dip,omega*(1-self%alpha-self%alpha_eg)*sum(I_p_pel*Nw))
-            _SET_BOTTOM_ODE_(self%id_waste_c,(sum(((self%alpha+self%alpha_eg)*I_c_pel +  mu_pel - g_pel/(1-self%psi)          )*Nw) - R*self%w_min/g_per_mmol_carbon          + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)*omega)
-            _SET_BOTTOM_ODE_(self%id_waste_n,(sum(((self%alpha+self%alpha_eg)*I_n_pel + (mu_pel - g_pel/(1-self%psi))*self%qnc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qnc + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)*omega)
-            _SET_BOTTOM_ODE_(self%id_waste_p,(sum(((self%alpha+self%alpha_eg)*I_p_pel + (mu_pel - g_pel/(1-self%psi))*self%qpc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qpc + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)*omega)
-            _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s_pel*Nw)*omega)
+            _SET_BOTTOM_ODE_(self%id_o2,-self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c_pel*Nw*omega))            
+            _SET_BOTTOM_ODE_(self%id_dic,(1-self%alpha-self%alpha_eg)*sum(I_c_pel*Nw*omega))
+            _SET_BOTTOM_ODE_(self%id_din,(1-self%alpha-self%alpha_eg)*sum(I_n_pel*Nw*omega))
+            _SET_BOTTOM_ODE_(self%id_dip,(1-self%alpha-self%alpha_eg)*sum(I_p_pel*Nw*omega))
+            _SET_BOTTOM_ODE_(self%id_waste_c,(sum(((self%alpha+self%alpha_eg)*I_c_pel +  mu_pel - g_pel/(1-self%psi)          )*Nw*omega) - R*self%w_min/g_per_mmol_carbon*omega(1)          + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*omega(self%nclass)/g_per_mmol_carbon))
+            _SET_BOTTOM_ODE_(self%id_waste_n,(sum(((self%alpha+self%alpha_eg)*I_n_pel + (mu_pel - g_pel/(1-self%psi))*self%qnc)*Nw*omega) - R*self%w_min/g_per_mmol_carbon*self%qnc*omega(1) + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*omega(self%nclass)/g_per_mmol_carbon*self%qnc))
+            _SET_BOTTOM_ODE_(self%id_waste_p,(sum(((self%alpha+self%alpha_eg)*I_p_pel + (mu_pel - g_pel/(1-self%psi))*self%qpc)*Nw*omega) - R*self%w_min/g_per_mmol_carbon*self%qpc*omega(1) + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*omega(self%nclass)/g_per_mmol_carbon*self%qpc))
+            _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s_pel*Nw*omega))
             
-            _SET_BOTTOM_EXCHANGE_(self%id_beno2,-(1._rk-omega)*self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw))            
-            _SET_BOTTOM_EXCHANGE_(self%id_bendic,(1._rk-omega)*(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw))
-            _SET_BOTTOM_EXCHANGE_(self%id_bendin,(1._rk-omega)*(1-self%alpha-self%alpha_eg)*sum(I_n_ben*Nw))
-            _SET_BOTTOM_EXCHANGE_(self%id_bendip,(1._rk-omega)*(1-self%alpha-self%alpha_eg)*sum(I_p_ben*Nw))
-            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_c, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben - g_ben/(1-self%psi)          )*Nw)          + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)*(1._rk-omega))
+            _SET_BOTTOM_EXCHANGE_(self%id_beno2,-self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw*(1._rk-omega)))            
+            _SET_BOTTOM_EXCHANGE_(self%id_bendic,(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw*(1._rk-omega)))
+            _SET_BOTTOM_EXCHANGE_(self%id_bendin,(1-self%alpha-self%alpha_eg)*sum(I_n_ben*Nw*(1._rk-omega)))
+            _SET_BOTTOM_EXCHANGE_(self%id_bendip,(1-self%alpha-self%alpha_eg)*sum(I_p_ben*Nw*(1._rk-omega)))
+            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_c, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben - g_ben/(1-self%psi)          )*Nw*(1._rk-omega))          + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon))
             
-            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_n,(sum(((self%alpha+self%alpha_eg)*I_n_ben + (mu_ben - g_ben/(1-self%psi))*self%qnc)*Nw) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)*(1._rk-omega))
+            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_n,(sum(((self%alpha+self%alpha_eg)*I_n_ben + (mu_ben - g_ben/(1-self%psi))*self%qnc)*Nw*(1._rk-omega)) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qnc))
             
-            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_p,(sum(((self%alpha+self%alpha_eg)*I_p_ben + (mu_ben - g_ben/(1-self%psi))*self%qpc)*Nw)  + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)*(1._rk-omega))
+            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_p,(sum(((self%alpha+self%alpha_eg)*I_p_ben + (mu_ben - g_ben/(1-self%psi))*self%qpc)*Nw*(1._rk-omega))  + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qpc))
             
-            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_s,sum(I_s_ben*Nw)*(1._rk-omega))
+            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_s,sum(I_s_ben*Nw*(1._rk-omega)))
             
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIP,  (1._rk-omega)*(1-self%alpha-self%alpha_eg)*sum(I_p_ben*Nw)*86400)
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_benO2_fish,  (1._rk-omega)*self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw)*86400) 
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIC,  (1._rk-omega)*(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw)*86400)
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIN, (1._rk-omega)*(1-self%alpha-self%alpha_eg)*sum(I_n_ben*Nw)*86400)
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOC, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben - g_ben/(1-self%psi)          )*Nw)          + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)*(1._rk-omega)*86400)
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPON, (sum(((self%alpha+self%alpha_eg)*I_n_ben + (mu_ben - g_ben/(1-self%psi))*self%qnc)*Nw) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)*(1._rk-omega)*86400)
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOP,(sum(((self%alpha+self%alpha_eg)*I_p_ben + (mu_ben - g_ben/(1-self%psi))*self%qpc)*Nw)  + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)*(1._rk-omega)*86400)
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOS,sum(I_s_ben*Nw)*(1._rk-omega))
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIP,  (1-self%alpha-self%alpha_eg)*sum(I_p_ben*Nw*(1._rk-omega)*86400))
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_benO2_fish,  -self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw*(1._rk-omega))*86400) 
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIC,  (1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw*(1._rk-omega))*86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIN, (1-self%alpha-self%alpha_eg)*sum(I_n_ben*Nw*(1._rk-omega))*86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOC, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben - g_ben/(1-self%psi)          )*Nw*(1._rk-omega))          + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon)*86400*CMass)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPON, (sum(((self%alpha+self%alpha_eg)*I_n_ben + (mu_ben - g_ben/(1-self%psi))*self%qnc)*Nw*(1._rk-omega)) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qnc)*86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOP,(sum(((self%alpha+self%alpha_eg)*I_p_ben + (mu_ben - g_ben/(1-self%psi))*self%qpc)*Nw*(1._rk-omega))  + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qpc)*86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOS,sum(I_s_ben*Nw*(1._rk-omega)))
   
             
          end if
