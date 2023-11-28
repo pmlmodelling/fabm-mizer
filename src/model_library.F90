@@ -8,6 +8,7 @@ module mizer_model_library
    use mizer_multi_element_population
    use mizer_multi_element_demersal_population
    use mizer_multi_element_demersal_pelagic_population
+   use mizer_multi_element_dem_pelagic_population
    ! Add new mizer models here
 
    implicit none
@@ -36,6 +37,7 @@ contains
          case ('prey');                       allocate(type_prey::model)
          case ('multi_element_demersal_population');   allocate(type_multi_element_demersal_population::model)
          case ('multi_element_demersal_pelagic_population');   allocate(type_multi_element_demersal_pelagic_population::model)
+         case ('multi_element_dem_pelagic_population');   allocate(type_multi_element_dem_pelagic_population::model)
          ! Add new mizer models here
       end select
 
