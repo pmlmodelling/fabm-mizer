@@ -50,9 +50,10 @@ module mizer_multi_element_population
       type (type_bottom_state_variable_id)                      :: id_dic
       type (type_bottom_state_variable_id)                      :: id_din
       type (type_bottom_state_variable_id)                      :: id_dip
-      type (type_bottom_state_variable_id)                      :: id_discard_c
-      type (type_bottom_state_variable_id)                      :: id_discard_n
-      type (type_bottom_state_variable_id)                      :: id_discard_p
+      ! WIP: Including discards from fishers
+      !type (type_bottom_state_variable_id)                      :: id_discard_c
+      !type (type_bottom_state_variable_id)                      :: id_discard_n
+      !type (type_bottom_state_variable_id)                      :: id_discard_p
       type (type_bottom_state_variable_id)                      :: id_landings           ! State variable that will serve as sink for all landed biomass
       type (type_horizontal_diagnostic_variable_id)             :: id_total_reproduction ! Total reproduction
       type (type_horizontal_diagnostic_variable_id)             :: id_R_p                ! Density-independent recruitment
@@ -477,13 +478,14 @@ contains
    call register_waste('excreted_nitrogen', 'n', id_n=self%id_din)
    call register_waste('excreted_phosphorus', 'p', id_p=self%id_dip)
 
-   call self%register_bottom_state_dependency(self%id_discard_c, 'discard_c', 'mmol C m-2', 'organic carbon discards')
-   call self%register_bottom_state_dependency(self%id_discard_n, 'discard_n', 'mmol N m-2', 'organic nitrogen discards')
-   call self%register_bottom_state_dependency(self%id_discard_p, 'discard_p', 'mmol P m-2', 'organic phosphorus discards')
-   call self%request_coupling_to_model(self%id_discard_c, 'discards', standard_variables%total_carbon)
-   call self%request_coupling_to_model(self%id_discard_n, 'discards', standard_variables%total_nitrogen)
-   call self%request_coupling_to_model(self%id_discard_p, 'discards', standard_variables%total_phosphorus)
-   call self%couplings%set_string('discards', './egested_matter')
+   ! WIP: Including discards from fishers
+   !call self%register_bottom_state_dependency(self%id_discard_c, 'discard_c', 'mmol C m-2', 'organic carbon discards')
+   !call self%register_bottom_state_dependency(self%id_discard_n, 'discard_n', 'mmol N m-2', 'organic nitrogen discards')
+   !call self%register_bottom_state_dependency(self%id_discard_p, 'discard_p', 'mmol P m-2', 'organic phosphorus discards')
+   !call self%request_coupling_to_model(self%id_discard_c, 'discards', standard_variables%total_carbon)
+   !call self%request_coupling_to_model(self%id_discard_n, 'discards', standard_variables%total_nitrogen)
+   !call self%request_coupling_to_model(self%id_discard_p, 'discards', standard_variables%total_phosphorus)
+   !call self%couplings%set_string('discards', './egested_matter')
 
    call self%register_state_variable(self%id_landings, 'landings', 'g m-2', 'landed biomass')
    call self%add_to_aggregate_variable(standard_variables%total_carbon, self%id_landings, scale_factor=1.0_rk/g_per_mmol_carbon)
