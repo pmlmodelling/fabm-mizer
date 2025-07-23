@@ -970,8 +970,8 @@ contains
              
              
             ! Compute ingestion rate (s-1) - mmol C of prey per mmol C in predator per time!
-            f_pel = E_e_pel/(E_e_pel+self%I_max(iclass))   ! Eq M5
-            f_ben = E_e_ben/(E_e_ben+self%I_max(iclass))   ! Eq M5
+            f_pel = E_e_pel/(E_e_pel+E_e_ben+self%I_max(iclass))   ! Eq M5
+            f_ben = E_e_ben/(E_e_pel+E_e_ben+self%I_max(iclass))   ! Eq M5
                                    
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_f_pel(iclass),f_pel)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_f_ben(iclass),f_ben)
