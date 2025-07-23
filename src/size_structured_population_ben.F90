@@ -31,9 +31,9 @@ module mizer_size_structured_population_ben
       type (type_horizontal_diagnostic_variable_id)             :: id_total_reproduction ! Total reproduction
       type (type_horizontal_diagnostic_variable_id)             :: id_R_p                ! Density-independent recruitment
       type (type_horizontal_diagnostic_variable_id)             :: id_R                  ! Density-dependent recruitment
-      type (type_horizontal_diagnostic_variable_id),allocatable :: id_reproduction(:)    ! Reproduction per size class
-      type (type_horizontal_diagnostic_variable_id),allocatable :: id_f(:)               ! Functional response per size class
-      type (type_horizontal_diagnostic_variable_id),allocatable :: id_g(:)               ! Specific growth rate per size class
+      type (type_horizontal_diagnostic_variable_id),allocatable :: id_reproduction_pel(:)    ! Reproduction per size class
+      type (type_horizontal_diagnostic_variable_id),allocatable :: id_f_pel(:), id_f_ben(:)               ! Functional response per size class
+      type (type_horizontal_diagnostic_variable_id),allocatable :: id_g_pel(:), id_g_ben(:)               ! Specific growth rate per size class
       type (type_horizontal_diagnostic_variable_id)             :: id_omega_diag
       type (type_dependency_id)                                 :: id_omega                 ! 
       type (type_dependency_id),allocatable                     :: id_pelspec(:), id_benspec(:)
@@ -60,6 +60,7 @@ module mizer_size_structured_population_ben
 
       ! Size-class-dependent parameters that will be precomputed during initialization
       real(rk), allocatable :: V(:)            ! volumetric search rate (Eq M2)
+      real(rk), allocatable :: VB(:)            ! benthic volumetric search rate (Eq M2)
       real(rk), allocatable :: I_max(:)        ! maximum ingestion rate (Eq M4)
       real(rk), allocatable :: std_metab(:)    ! standard metabolism (k*w^p in Eq M7)
       real(rk), allocatable :: mu_b(:)         ! background mortality (temperature dependent)
@@ -67,8 +68,7 @@ module mizer_size_structured_population_ben
       real(rk), allocatable :: F(:)            ! fishing mortality
       real(rk), allocatable :: psi(:)          ! allocation to reproduction
       real(rk), allocatable :: phi(:,:)        ! prey preference
-!      real(rk), allocatable :: pelspec(:)        ! prey available to pelagic fish
-!      real(rk), allocatable :: benspec(:)        ! prey available to benthic fish
+
 
       
 
@@ -103,7 +103,7 @@ contains
    integer            :: iclass, iprey
    logical            :: cannibalism, biomass_has_prey_unit
    real(rk)           :: delta_logw
-   real(rk)           :: k_vb,n,q,p,w_mat,w_inf,gamma,h,ks,f0,z0
+   real(rk)           :: k_vb,n,q,qB, p,w_mat,w_inf,gamma,gammaB,h,ks,f0,z0!
    real(rk)           :: z0pre,z0exp,w_s,z_s,z_spre
    real(rk)           :: kappa,lambda
    real(rk)           :: T_ref
@@ -127,6 +127,7 @@ contains
    call self%get_parameter(self%w_min, 'w_min',  'g',    'egg mass',                           default=0.001_rk, minimum=0.0_rk)
    call self%get_parameter(n,          'n',      '-',    'exponent of max. consumption',       default=2.0_rk/3.0_rk)
    call self%get_parameter(q,          'q',      '-',    'exponent of search volume',          default=0.8_rk)
+   call self%get_parameter(qB,          'qB',      '-',    'benthic exponent of search volume',          default=q)
    call self%get_parameter(p,          'p',      '-',    'exponent of standard metabolism',    default=0.7_rk)
    call self%get_parameter(z0_type,    'z0_type','',     'type of background mortality (0: constant, 1: allometric function of size)', default=0)
    call self%get_parameter(z0pre,      'z0pre',  'yr-1', 'pre-factor for background mortality (= mortality at 1 g)',default=0.6_rk,   minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
@@ -172,6 +173,7 @@ contains
    gamma = f0*h*self%beta**(2-lambda)/((1-f0)*sqrt(2*pi)*kappa*self%sigma)
    !gamma = f0*h*self%beta**(2-lambda)/((1-f0)*sqrt(2*pi)*kappa*self%sigma*exp((lambda-2)**2 * self%sigma**2 / 2)) ! add exp term taken from actual R code
    call self%get_parameter(gamma, 'gamma', 'm3 yr-1 g^(-q)', 'pre-factor for volumetric search rate', minimum=0.0_rk, default=gamma*sec_per_year, scale_factor=1._rk/sec_per_year)
+   call self%get_parameter(gammaB, 'gammaB', 'm3 yr-1 g^(-q)', 'pre-factor for volumetric search rate', minimum=0.0_rk, default=gamma*sec_per_year, scale_factor=1._rk/sec_per_year)
 
    ! Allow user override of standard metabolism pre-factor (e.g., Blanchard community size spectrum model has ks=0)
    call self%get_parameter(ks, 'ks', 'yr-1 g^(-p)', 'pre-factor for standard metabolism', minimum=0.0_rk, default=0.2_rk*h*sec_per_year, scale_factor=1._rk/sec_per_year)
@@ -194,7 +196,9 @@ contains
    allocate(self%F(self%nclass))
    allocate(self%psi(self%nclass))
    allocate(self%V(self%nclass))
+   allocate(self%VB(self%nclass))
    self%V(:) = gamma*self%w**(q-1)      ! specific volumetric search rate [m3 s-1 g-1] (mass-specific, hence the -1!)
+   self%VB(:) = gammaB*self%w**(qB-1)      ! specific volumetric search rate [m3 s-1 g-1] (mass-specific, hence the -1!)
    self%I_max(:) = h*self%w**(n-1)      ! specific maximum ingestion rate [s-1]; Eq M4, but specific, hence the -1!
    self%std_metab(:) = ks*self%w**(p-1) ! specific metabolism [s-1]; second term in Eq M7, but specific, hence the -1!
    select case (z0_type)
@@ -289,9 +293,11 @@ contains
        call self%register_dependency(self%id_benspec(iprey), 'benspec'//trim(strindex), '-', 'Can prey be benthic , 1=True, 0 =False') 
    end do
    ! Allocate size-class-specific identifiers for abundance state variable and diagnostics.
-   allocate(self%id_reproduction(self%nclass))
-   allocate(self%id_f(self%nclass))
-   allocate(self%id_g(self%nclass))
+   allocate(self%id_reproduction_pel(self%nclass))
+   allocate(self%id_f_pel(self%nclass))
+   allocate(self%id_f_ben(self%nclass))
+   allocate(self%id_g_pel(self%nclass))
+   allocate(self%id_g_ben(self%nclass))
    do iclass=1,self%nclass
       ! Postfix for size-class-specific variable names (an integer number)
       write (strindex,'(i0)') iclass
@@ -302,9 +308,11 @@ contains
       end if
 
       ! Register size-class-specific diagnostics
-      call self%register_diagnostic_variable(self%id_reproduction(iclass),'reproduction'//trim(strindex),'g m-2 d-1','allocation to reproduction in size class '//trim(strindex),         source=source_do_bottom)
-      call self%register_diagnostic_variable(self%id_f(iclass),           'f'//trim(strindex),           '-',        'functional response of size class '//trim(strindex),                source=source_do_bottom)
-      call self%register_diagnostic_variable(self%id_g(iclass),           'g'//trim(strindex),           'd-1',      'specific growth rate of individuals in size class '//trim(strindex),source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_reproduction_pel(iclass),'reproduction'//trim(strindex),'g m-2 d-1','allocation to reproduction in size class '//trim(strindex),         source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_f_pel(iclass),           'f_pel'//trim(strindex),           '-',        'functional response of size class '//trim(strindex),                source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_f_ben(iclass),           'f_ben'//trim(strindex),           '-',        'functional response of size class '//trim(strindex),                source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_g_pel(iclass),           'g_pel'//trim(strindex),           'd-1',      'specific growth rate of individuals in size class '//trim(strindex),source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_g_ben(iclass),           'g_ben'//trim(strindex),           'd-1',      'specific growth rate of individuals in size class '//trim(strindex),source=source_do_bottom)
    end do
 
    allocate(self%phi(self%nprey,self%nclass))
@@ -377,9 +385,10 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey
-      real(rk) :: E_e,E_a,f,total_reproduction,T_lim,temp,g_tot,R,R_p,nflux(0:self%nclass), omega
-      real(rk),dimension(self%nprey)  :: Nw_prey,prey_loss, pelspec, benspec
-      real(rk),dimension(self%nclass) :: Nw,I,maintenance,g,mu,reproduction
+      real(rk) :: E_e_pel, E_e_ben,E_a_pel, E_a_ben,f_pel, f_ben,total_reproduction,T_lim,temp,g_tot_pel, g_tot_ben,R,R_p,nflux_pel(0:self%nclass),nflux_ben(0:self%nclass), omega
+      real(rk) :: T_lim_bot, bot_temp
+      real(rk),dimension(self%nprey)  :: Nw_prey,prey_loss_pel, prey_loss_ben, pelspec, benspec
+      real(rk),dimension(self%nclass) :: Nw,I_pel,I_ben, maintenance_pel, maintenance_ben,g_pel, g_ben,mu_pel, mu_ben,reproduction_pel
       real(rk), parameter :: delta_t = 12._rk/86400
 
 
@@ -399,9 +408,12 @@ contains
          ! Temperature limitation factor affecting all rates (not in Blanchard et al.)
          if (self%T_dependence==1) then
             _GET_(self%id_T, temp)
+            _GET_(self%id_T_b, bot_temp)
             T_lim = exp(self%c1-self%E_A/Boltzmann/(temp+Kelvin))
+            T_lim_bot=exp(self%c1-self%E_A/Boltzmann/(bot_temp+Kelvin))
          else
-            T_lim = 1
+            T_lim = 1._rk
+            T_lim_bot=1._rk
          end if
 
          !Determine fraction of time fish spend in pelagic based on ratio of pelagic to demersal food
@@ -418,69 +430,89 @@ contains
           
          ! Food uptake (all size classes, all prey types)
          ! This computes total ingestion per size class (over all prey), and total loss per prey type (over all size classes)
-         prey_loss = 0.0_rk
+         prey_loss_pel = 0.0_rk
+         prey_loss_ben = 0.0_rk
          do iclass=1,self%nclass
             ! Compute total prey availability (concentration summed over all prey, scaled with prey-specific preference)
             ! Units: g m-3
-            E_a = sum(self%phi(:,iclass)*Nw_prey)
+            E_a_pel = sum(self%phi(:,iclass)*Nw_prey*pelspec(:))
+            E_a_ben= sum(self%phi(:,iclass)*Nw_prey*benspec(:))
 #ifndef NDEBUG
-            if (isnan(E_a)) &
-               call self%fatal_error('do_bottom','E_a is nan')
+            if (isnan(E_a_pel)) &
+               call self%fatal_error('do_bottom','E_a_pel is nan')
+            if (isnan(E_a_ben)) &
+               call self%fatal_error('do_bottom','E_a_ben is nan')
 #endif
 
             ! Compute actual encounter (g prey s-1 g-1): availability per volume (g prey m-3) times mass-specific volumetric search rate (m3 g-1 s-1)
-            E_e = self%V(iclass)*E_a ! Eq M3
+            E_e_pel = self%V(iclass)*E_a_pel ! Eq M3
+            E_e_ben = self%V(iclass)*E_a_ben ! Eq M3
 
             ! Compute ingestion rate (g prey s-1 g-1) - per predator biomass!
-            f = E_e/(E_e+self%I_max(iclass))   ! Eq M5
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_f(iclass),f)
-            I(iclass) = T_lim*self%I_max(iclass)*f ! ingestion part of M7
+            f_pel = E_e_pel/(E_e_pel+self%I_max(iclass))   ! Eq M5
+            f_ben = E_e_ben/(E_e_ben+self%I_max(iclass))   ! Eq M5
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_f_pel(iclass),f_pel)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_f_ben(iclass),f_ben)
+            I_pel(iclass) = T_lim*self%I_max(iclass)*f_pel ! ingestion part of M7
+            I_ben(iclass) = T_lim_bot*self%I_max(iclass)*f_ben ! ingestion part of M7
 #ifndef NDEBUG
-            if (isnan(I(iclass))) &
+            if (isnan(I_pel(iclass))) &
+               call self%fatal_error('do_bottom','ingestion is nan')
+            if (isnan(I_ben(iclass))) &
                call self%fatal_error('do_bottom','ingestion is nan')
 #endif
 
             ! Account for this size class' ingestion in specific loss rate of all prey
             ! Units go from (g prey s-1 g-1) to (m s-1) - a relative bottom flux for prey concentration -
             ! by dividing by prey (g m-3) and multiply by predator (g m-2)
-            prey_loss(:) = prey_loss(:) + I(iclass)/E_a*self%phi(:,iclass)*Nw(iclass)
+            prey_loss_pel(:) = prey_loss_pel(:) + I_pel(iclass)/E_a_pel*self%phi(:,iclass)*Nw(iclass)
+            prey_loss_ben(:) = prey_loss_ben(:) + I_ben(iclass)/E_a_ben*self%phi(:,iclass)*Nw(iclass)
          end do
 
 #ifndef NDEBUG
-         if (any(prey_loss<0)) &
+         if (any(prey_loss_pel<0)) &
+            call self%fatal_error('do_bottom','prey_loss is negative')
+         if (any(prey_loss_ben<0)) &
             call self%fatal_error('do_bottom','prey_loss is negative')
 #endif
 
          ! Initialize size-class-specific mortality (s-1) with precomputed size-dependent background value.
-         mu = self%mu_b*T_lim + self%mu_s
+         mu_pel = self%mu_b*T_lim + self%mu_s
+         mu_ben = self%mu_b*T_lim_bot + self%mu_s
 
          ! Individual physiology (per size class)
          do iclass=1,self%nclass
             ! Specific maintenance rate (s-1)
-            maintenance(iclass) = T_lim*self%std_metab(iclass)
+            maintenance_pel(iclass) = T_lim*self%std_metab(iclass)
+            maintenance_ben(iclass) = T_lim_bot*self%std_metab(iclass)
 
             ! Net specific energy availability (s-1)
-            g_tot = self%alpha*I(iclass) - maintenance(iclass)
+            g_tot_pel = self%alpha*I_pel(iclass) - maintenance_pel(iclass)
+            g_tot_ben = self%alpha*I_ben(iclass) - maintenance_ben(iclass)
 
             ! Avoid shrinking: limit maintenance to maximum sustainable value and increase starvation mortality.
-            maintenance(iclass) = min(maintenance(iclass),self%alpha*I(iclass))
-            mu(iclass) = mu(iclass) + max(0.0_rk,-g_tot/self%w(iclass)/self%xi)
-            g_tot = max(0.0_rk,g_tot)
+            maintenance_pel(iclass) = min(maintenance_pel(iclass),self%alpha*I_pel(iclass))
+            mu_pel(iclass) = mu_pel(iclass) + max(0.0_rk,-g_tot_pel/self%w(iclass)/self%xi)
+            g_tot_pel = max(0.0_rk,g_tot_pel)
 
             ! Individual growth (s-1)
-            g(iclass) = (1-self%psi(iclass))*g_tot ! Eq M7
+            g_pel(iclass) = (1-self%psi(iclass))*g_tot_pel ! Eq M7
+            g_ben(iclass) = (1-self%psi(iclass))*g_tot_ben ! Eq M7
 
             ! Mass flux towards reproduction (g m-2 s-1) - sum over all individuals in this size class
-            reproduction(iclass) = self%psi(iclass)*g_tot*Nw(iclass)
+            reproduction_pel(iclass) = self%psi(iclass)*g_tot_pel*Nw(iclass)
+!            reproduction_ben(iclass) = self%psi(iclass)*g_tot_ben*Nw(iclass)
          end do
 
          ! Compute number of individuals moving from each size class to the next (units: # s-1)
-         nflux(1:self%nclass) = Nw*g/self%delta_w
+         nflux_pel(1:self%nclass) = Nw*g_pel/self%delta_w
+         nflux_ben(1:self%nclass) = Nw*g_ben/self%delta_w
+
 
          ! Sum reproductive output of entire population in g m-2 s-1 (Eq 10 of Hartvig et al. 2011 JTB)
          ! Note: division by 2 is the result of the fact that reproductive output applies to females only,
          ! which are assumed to be 50% of the population.
-         total_reproduction = sum(reproduction)
+         total_reproduction = sum(reproduction_pel)
          R_p = self%erepro / 2 * total_reproduction / self%w_min
 
          ! Use stock-recruitment relationship to translate density-independent recruitment into actual recruitment (units: # s-1)
@@ -499,27 +531,31 @@ contains
 
          ! Use recruitment as number of incoming individuals for the first size class.
          ! First compute incoming mass (# individuals * minimum mass w_min) then divide by centre mass of first bin to get # of individuals
-         nflux(0) = R * self%w_min / self%w(1)
+         nflux_pel(0) = R * self%w_min / self%w(1)
 
          ! Send prey consumption to FABM (combined impact of all size classes, per prey type)
          ! This is represented as a bottom flux for prey concentration (g m-2 s-1)
          do iprey = 1, self%nprey
-            _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey), -prey_loss(iprey) * Nw_prey(iprey))
+            _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey), omega*(-prey_loss_pel(iprey) * Nw_prey(iprey)))
+            _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey), (1._rk-omega)*(-prey_loss_ben(iprey) * Nw_prey(iprey)))
          end do
 
          ! Transfer size-class-specific source terms and diagnostics to FABM
          do iclass = 1, self%nclass
             ! Apply specific mortality (s-1) to size-class-specific abundances and apply upwind advection - this is a time-explicit version of Eq G.1 of Hartvig et al.
-            _SET_BOTTOM_ODE_(self%id_Nw(iclass), -(mu(iclass) + self%F(iclass)) * Nw(iclass) + (nflux(iclass - 1) - nflux(iclass)) * self%w(iclass))
+            _SET_BOTTOM_ODE_(self%id_Nw(iclass), (-(mu_pel(iclass) + self%F(iclass)) * Nw(iclass) + (nflux_pel(iclass - 1) - nflux_pel(iclass)) * self%w(iclass))*omega)
+            _SET_BOTTOM_ODE_(self%id_Nw(iclass), (-(mu_ben(iclass) + self%F(iclass)) * Nw(iclass) + (nflux_ben(iclass - 1) - nflux_ben(iclass)) * self%w(iclass))*(1._rk-omega))
 
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g(iclass), g(iclass) * 86400)
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_reproduction(iclass), reproduction(iclass) * 86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g_pel(iclass), g_pel(iclass) * 86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g_ben(iclass), g_ben(iclass) * 86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_reproduction_pel(iclass), reproduction_pel(iclass) * 86400)
          end do
 
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_total_reproduction, total_reproduction * 86400)
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R_p, R_p * 86400)
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R, R * 86400)
-         _SET_BOTTOM_ODE_(self%id_waste, sum(((1._rk - self%alpha) * I + maintenance + mu) * Nw) + total_reproduction - R*self%w_min + nflux(self%nclass) * (self%w(self%nclass) + self%delta_w(self%nclass)))
+         _SET_BOTTOM_ODE_(self%id_waste, (sum(((1._rk - self%alpha) * I_pel + maintenance_pel + mu_pel) * Nw) + total_reproduction - R*self%w_min + nflux_pel(self%nclass) * (self%w(self%nclass) + self%delta_w(self%nclass)))*omega)
+         _SET_BOTTOM_ODE_(self%id_waste, (sum(((1._rk - self%alpha) * I_ben + maintenance_ben + mu_ben) * Nw) + total_reproduction - R*self%w_min + nflux_ben(self%nclass) * (self%w(self%nclass) + self%delta_w(self%nclass)))*(1._rk-omega))
          _SET_BOTTOM_ODE_(self%id_landings, sum(self%F * Nw))
       _HORIZONTAL_LOOP_END_
 
