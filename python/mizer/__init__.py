@@ -23,10 +23,12 @@ from . import datasources
 EULER = 0
 
 class Prey(object):
-    def __init__(self, name, mass, value):
+    def __init__(self, name, mass, value,prey_is_pel,prey_is_ben):
         self.name = name
         self.mass = mass
         self.value_provider = datasources.asValueProvider(value)
+        self.prey_is_pel=prey_is_pel
+        self.prey_is_ben=prey_is_ben
 
 class BasePreyCollection(object):
     def __init__(self):
@@ -39,6 +41,8 @@ class PreyCollection(BasePreyCollection):
         self.items = items
         self.names = [item.name for item in self.items]
         self.masses = numpy.array([10.**numpy.mean(numpy.log10(item.mass)) for item in self.items])
+        self.pelprey = [item.prey_is_pel for item in self.items]
+        self.benprey = [item.prey_is_ben for item in self.items]
 
     def getValues(self, time):
         result = numpy.empty(numpy.shape(time)+self.masses.shape)
@@ -79,48 +83,99 @@ class GriddedPreyCollection(BasePreyCollection):
         prey_mass_centers = 0.5 * (prey_mass_bounds[1:] + prey_mass_bounds[:-1])
 
         self.prey_bin_weights = []
+        self.pelprey_array = []
+        self.benprey_array = []
         for prey_item in self.source.items:
             log10mass = numpy.log10(prey_item.mass)
             weights = numpy.zeros_like(prey_mass_centers)
+            pel_prey_array= numpy.ones_like(prey_mass_centers)
+            ben_prey_array= numpy.ones_like(prey_mass_centers)
+           # self.pel_prey_array[:] = 
+           # self.pel_prey_array[:] =
             if isinstance(prey_item.mass, float):
                 # prey mass is given as a single value
                 i = numpy.argmin(numpy.abs(prey_mass_centers - log10mass))
                 weights[i] = 1.
+                pel_prey_array[i] = prey_item.prey_is_pel
+                ben_prey_array[i] = prey_item.prey_is_ben
             else:
                 # prey mass is given as a range (min, max)
                 for ibin in range(len(prey_mass_centers)):
                     left  = max(log10mass[0], prey_mass_bounds[ibin])
                     right = min(log10mass[1], prey_mass_bounds[ibin + 1])
                     weights[ibin] = max(0., right - left) / (log10mass[1] - log10mass[0])
+                    pel_prey_array[ibin] = prey_item.prey_is_pel
+                    ben_prey_array[ibin] = prey_item.prey_is_ben
                 assert abs(weights.sum()-1.) < 1e-12 or maximum_mass < prey_item.mass[1], '%s: weights should add up to 1, but currently add up to %s' % (prey_item.name, weights.sum())
             self.prey_bin_weights.append(weights)
+            self.pelprey_array.append(pel_prey_array)
+            self.benprey_array.append(ben_prey_array)
 
         self.names = ['prey%i' % i for i in range(len(prey_mass_centers))]
         self.masses = 10.**prey_mass_centers
-
+        
     def getValues(self, time):
-        result = numpy.zeros(numpy.shape(time) + self.masses.shape)
-        for item, weights in zip(self.source.items, self.prey_bin_weights):
-            result += weights*numpy.expand_dims(item.value_provider.get(time), -1)
-        return result
+        pel_result = numpy.zeros(numpy.shape(time) + self.masses.shape)
+        ben_result = numpy.zeros(numpy.shape(time) + self.masses.shape)
+        for item, weights, p_status, b_status in zip(self.source.items, self.prey_bin_weights,self.source.pelprey, self.source.benprey ):
+            pel_result += p_status*weights*numpy.expand_dims(item.value_provider.get(time), -1)
+            ben_result += b_status*weights*numpy.expand_dims(item.value_provider.get(time), -1)
+        prop_pel = pel_result/(pel_result+ben_result)
+        prop_ben = ben_result/(pel_result+ben_result)
+        
+        return pel_result,  ben_result, prop_pel, prop_ben   
+        
+        
+
+#    def getValues(self, time):
+#        result = numpy.zeros(numpy.shape(time) + self.masses.shape)
+#        for item, weights in zip(self.source.items, self.prey_bin_weights):
+#            result += weights*numpy.expand_dims(item.value_provider.get(time), -1)
+#        return result
+
+#    def getMean(self):
+#        result = numpy.zeros_like(self.masses)
+#        for item, weights in zip(self.source.items, self.prey_bin_weights):
+#            result += weights*item.value_provider.mean()
+#        return result
 
     def getMean(self):
-        result = numpy.zeros_like(self.masses)
-        for item, weights in zip(self.source.items, self.prey_bin_weights):
-            result += weights*item.value_provider.mean()
-        return result
+        pel_result = numpy.zeros_like(self.masses)
+        ben_result = numpy.zeros_like(self.masses)
+        for item, weights, p_status, b_status  in zip(self.source.items, self.prey_bin_weights,self.source.pelprey, self.source.benprey):
+            pel_result += p_status*weights*item.value_provider.mean()
+            ben_result += b_status*weights*item.value_provider.mean()
+        prop_pel = pel_result/(pel_result+ben_result)
+        prop_ben = ben_result/(pel_result+ben_result)
+        return pel_result,  ben_result,  prop_pel, prop_ben
+        
+#    def getbenstatus(self):
+#        benresult = numpy.zeros_like(self.masses)
+#        pelresult= numpy.zeros_like(self.masses)
+#        for item, weights in zip(self.source.benprey, self.prey_bin_weights):
+#            benresult += weights*item
+#        for item, weights in zip(self.source.pelprey, self.prey_bin_weights):
+#            pelresult += weights*item
+#        return pelresult,benresult
 
 class Mizer(object):
-    def __init__(self, parameters={}, prey=(), temperature=None, recruitment_from_prey=0, fabm_yaml_path=None, depth=None, initial_density=1., verbose=True):
-        self.parameters = dict(parameters)
+    def __init__(self, parameters={}, prey=(), temperature=None, ben_temperature=None,omega=None,recruitment_from_prey=0, fabm_yaml_path=None, depth=None, initial_density=1., verbose=True):
+        self.parameters = dict(parameters)       
         self.initial_density = initial_density
 
         self.temperature_provider = None
+        self.ben_temperature_provider=None
+        self.omega_provider=None
         if temperature is not None:
             self.temperature_provider = datasources.asValueProvider(temperature)
+        if ben_temperature is not None:
+            self.ben_temperature_provider = datasources.asValueProvider(ben_temperature)
         self.depth_provider = None
         if depth is not None:
             self.depth_provider = datasources.asValueProvider(depth)
+            
+        if omega is not None:
+            self.omega_provider = datasources.asValueProvider(omega)
 
         assert not pyfabm.hasError(), 'pyfabm library has crashed previously (stop has been called).'
         #fabm_yaml_path = 'fabm.yaml'
@@ -134,14 +189,28 @@ class Mizer(object):
             mizer_params['biomass_has_prey_unit'] = False
         mizer_coupling = {'waste': 'zero_hz'}
         mizer_initialization = {}
+
         for iclass in range(mizer_params['nclass']):
             mizer_initialization['Nw%i' % (iclass+1,)] = initial_density/mizer_params['nclass']
-        mizer_yaml = {'model': 'mizer/size_structured_population', 'parameters': mizer_params, 'coupling': mizer_coupling, 'initialization': mizer_initialization}
+        mizer_yaml = {'model': 'mizer/size_structured_population_ben', 'parameters': mizer_params, 'coupling': mizer_coupling, 'initialization': mizer_initialization}
         fabm_yaml = {'instances': {'fish': mizer_yaml}}
 
         if not isinstance(prey, BasePreyCollection):
             prey = PreyCollection(*prey)
         self.prey = prey
+       # print (prey)
+        
+       
+#        if not isinstance(ben_prey, benBasePreyCollection):
+#            ben_prey = PreyCollection(*ben_prey)
+            
+#        if not isinstance(pel_prey, pelBasePreyCollection):
+#            pel_prey = PreyCollection(*pel_prey)
+#        self.prey = prey
+#        self.ben_prey = ben_prey
+#        self.pel_prey = pel_prey
+
+
 
         iprey = 0
         for name, mass in zip(self.prey.names, self.prey.masses):
@@ -149,6 +218,17 @@ class Mizer(object):
             fabm_yaml['instances'][name] = {'model': 'mizer/prey', 'parameters': {'w': float(mass)}}
             mizer_coupling['Nw_prey%i' % iprey] = '%s/Nw' % name
         mizer_params['nprey'] = iprey
+        
+#        pelprey_array, benprey_array= prey.getbenstatus()
+        
+
+             
+#        if prey_is_ben is not None:
+#            prey_is_ben=numpy.append(prey_is_ben, numpy.ones(nclass))
+#        else:
+#            prey_is_ben = numpy.ones(nprey+iprey)
+        
+        #print (iprey)
         with fabm_yaml_file:
             yaml.dump(fabm_yaml, fabm_yaml_file, default_flow_style=False)
 
@@ -194,7 +274,37 @@ class Mizer(object):
             self.interaction_depth.value = self.depth_provider.mean()
             if verbose:
                 print('Mean depth: %.1f m' % (self.interaction_depth.value,))
+        if omega is not None:
+           self.omega = self.fabm_model.findDependency('fish/omega')
+           self.omega.value = self.omega_provider.mean()
+           assert self.omega.value > 0. and self.omega.value < 1., 'Invalid omega  (%s)' % self.omega.value 
+        else:
+           self.omega=self.parameters['omega']
+           self.omega.value = self.omega
+           
+#        self.pelspec=self.fabm_model.findDependency('fish/pelspec')
+#        self.pelspec.value= prey_is_pel
+       
+#        self.benspec=self.fabm_model.findDependency('fish/benspec')
+#        self.benspec.value= prey_is_ben
+        if ben_temperature is not None:
+            self.ben_temperature = self.fabm_model.findDependency('fish/T_b')
+            self.ben_temperature.value = self.ben_temperature_provider.mean()
+            assert self.ben_temperature.value > -10. and self.ben_temperature.value < 40., 'Invalid temperature mean (%s)' % self.ben_temperature.value        
+        
+        nclass =  mizer_params['nclass']
+        pel_result,  ben_result,  prop_pel, prop_ben = prey.getMean()
+        
+        prey_is_pel=numpy.append(prop_pel, numpy.ones(nclass))
+        prey_is_ben=numpy.append(prop_ben, numpy.ones(nclass))
 
+        for i in range(1,iprey+nclass+2):
+             self.pelspec= self.fabm_model.findDependency('fish/pelspec%i' %int(i))
+             self.pelspec.value=prey_is_pel[i-1]
+             self.benspec = self.fabm_model.findDependency('fish/benspec%i' %int(i))
+             self.benspec.value=prey_is_ben[i-1]    
+             
+             
         # Verify the model is ready to be used
         assert self.fabm_model.checkReady(), 'One or more model dependencies have not been fulfilled.'
 
@@ -223,13 +333,21 @@ class Mizer(object):
         depth_provider = self.depth_provider
         temperature = self.temperature
         temperature_provider = self.temperature_provider
+        ben_temperature= self.ben_temperature
+        ben_temperature_provider = self.ben_temperature_provider
+        omega=self.omega
+        omega_provider= self.omega_provider
+        
+        
         if depth_provider is not None:
             interaction_depth = self.interaction_depth
         prey = self.prey
+#        pel_prey=self.pel_prey
         prey_indices = self.prey_indices
         ibin0 = self.bin_indices[0]
         recruitment_from_prey = self.recruitment_from_prey
         predbin_per_preybin = self.log10bin_width/self.prey.delta_log10mass
+    #    predbin_per_preybin_pel = self.log10bin_width/self.pel_prey.delta_log10mass
 
         def getEggs(preys):
             if recruitment_from_prey == 1:
@@ -261,9 +379,21 @@ class Mizer(object):
         t_spinup, y_spinup = None, None
         if spinup > 0:
             t_spinup = numpy.linspace(t[0]-365.23*spinup, t[0], 1 + spinup*12)
-            state[prey_indices] = prey.getMean()
+            preys_pel_mstate, preys_ben_mstate, preys_pro_pel_m, preys_pro_ben_m= prey.getMean()
+            nclass= self.fabm_model.parameters['fish/nclass'].value
+            
+            preys_is_pel=numpy.append(preys_pro_pel_m, numpy.ones(nclass))
+            preys_is_ben=numpy.append(preys_pro_ben_m, numpy.ones(nclass))
+            print (len(preys_is_pel))
+            print (len(prey_indices))
+            state[prey_indices] = preys_pel_mstate + preys_ben_mstate
+           # state[prey_indices] = prey.getMean()
             if temperature_provider is not None:
                 temperature.value = temperature_provider.mean()
+            if ben_temperature_provider is not None:
+                ben_temperature.value = ben_temperature_provider.mean()
+            if omega is not None:
+                omega.value = omega_provider.mean()
             if depth_provider is not None:
                 interaction_depth.value = depth_provider.mean()
             if recruitment_from_prey:
@@ -273,6 +403,11 @@ class Mizer(object):
             if verbose:
                 print('Spinning up from %s to %s' % (num2date(t_spinup[0]), num2date(t_spinup[-1])))
 
+
+            for i in range(1,len(prey_indices)+nclass+1):
+                 self.fabm_model.findDependency('fish/pelspec%i' %i).value=preys_is_pel[i-1]
+                 self.fabm_model.findDependency('fish/benspec%i' %i).value=preys_is_ben[i-1] 
+            print (i)
             # Integrate with Forward Euler
             #y_spinup = self.fabm_model.integrate(state_copy, t_spinup, dt=dt)
             ioutput = 0
@@ -295,7 +430,11 @@ class Mizer(object):
         # First prepare all inputs on time integration grid
         ts = t[0] + numpy.arange(1 + int(round((t[-1] - t[0]) / dt))) * dt
         assert ts[-1] >= t[-1], 'Simulation ends at %s, which is before last desired output time %s.' % (ts[-1], t[-1])
-        preys = prey.getValues(ts)
+        preys_pel, preys_ben, preys_pro_pel, preys_pro_ben= prey.getValues(ts)
+        
+        #calculate total prey
+        preys =  preys_pel + preys_ben
+        
         assert (preys >= 0).all(), 'Minimum prey concentration < 0: %s' % (preys.min(),)
         if depth_provider is not None:
             depths = depth_provider.get(ts)
@@ -306,6 +445,18 @@ class Mizer(object):
                 eggs[:] *= depths
         if temperature_provider is not None:
             temperatures = temperature_provider.get(ts)
+        if ben_temperature_provider is not None:
+            ben_temperatures = ben_temperature_provider.get(ts)
+        if omega_provider is not None:
+            omegas = omega_provider.get(ts)
+
+
+        preys_is_pel_d=numpy.append(preys_pro_pel, numpy.ones(nclass))
+        preys_is_ben_d=numpy.append(preys_pro_ben, numpy.ones(nclass))
+        for i in range(1,len(prey_indices)+nclass+1):
+            self.fabm_model.findDependency('fish/pelspec%i' %i).value=preys_is_pel_d[i-1]
+            self.fabm_model.findDependency('fish/benspec%i' %i).value=preys_is_ben_d[i-1] 
+
 
         # Time integration
         ioutput = 0
@@ -319,6 +470,10 @@ class Mizer(object):
                 interaction_depth.value = depths[itime]
             if recruitment_from_prey:
                 state[ibin0] = eggs[itime]
+            if omega_provider is not None:
+                omega.value = omegas[itime]  
+            if ben_temperature_provider is not None:
+                ben_temperature.value = ben_temperatures[itime]
             checkState(repair=True)
             if current_t >= t[ioutput]:
                 y[ioutput, :] = state
@@ -329,9 +484,14 @@ class Mizer(object):
             return
 
         # Overwrite prey masses with imposed values.
-        y[:, prey_indices] = prey.getValues(t)
+        preys_pel_y, preys_ben_y,preys_pro_pel_y, preys_pro_ben_y = prey.getValues(t)
+        
+        y[:, prey_indices] = preys_pel_y + preys_ben_y
+     #   y[:, prey_indices] = prey.getValues(t)
         depth = None if depth_provider is None else depth_provider.get(t)
         temperature = None if temperature_provider is None else temperature_provider.get(t)
+        ben_temperature = None if ben_temperature_provider is None else ben_temperature_provider.get(t)
+        omega = None if omega_provider is None else omega_provider.get(t)
         if recruitment_from_prey:
             y[:, ibin0] = getEggs(y[:, prey_indices])
             if depth is not None:
@@ -362,7 +522,9 @@ class Mizer(object):
 
         t_spinup = t[0] - numpy.arange(0., 365.23*spinup, 1.)[::-1]
         initial_state = numpy.array(initial_state)
-        initial_state[self.prey_indices] = self.prey.getMean()
+        preys_pel_istate, preys_ben_istate = prey.getMean()
+        initial_state[self.prey_indices] = preys_pel_mstate + preys_ben_istate
+       # initial_state[self.prey_indices] = self.prey.getMean()
         if self.recruitment_from_prey:
             initial_state[self.bin_indices[0]] = initial_state[self.prey_indices].mean()*self.log10bin_width/self.prey.delta_log10mass
             if self.depth_provider is not None:
