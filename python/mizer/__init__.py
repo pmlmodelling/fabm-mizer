@@ -387,7 +387,9 @@ class Mizer(object):
             print (len(preys_is_pel))
             print (len(prey_indices))
             state[prey_indices] = preys_pel_mstate + preys_ben_mstate
-           # state[prey_indices] = prey.getMean()
+            state_r=state.copy()
+            state_r[prey_indices]= preys_pel_mstate
+            # state[prey_indices] = prey.getMean()
             if temperature_provider is not None:
                 temperature.value = temperature_provider.mean()
             if ben_temperature_provider is not None:
@@ -397,7 +399,7 @@ class Mizer(object):
             if depth_provider is not None:
                 interaction_depth.value = depth_provider.mean()
             if recruitment_from_prey:
-                state[ibin0] = getEggs(state[prey_indices])
+                state[ibin0] = getEggs(state_r[prey_indices])
                 if depth_provider is not None:
                     state[ibin0] *= interaction_depth.value
             if verbose:
@@ -440,7 +442,7 @@ class Mizer(object):
             depths = depth_provider.get(ts)
             assert (depths >= 0).all(), 'Minimum depth < 0: %s' % (depths.min(),)
         if recruitment_from_prey:
-            eggs = getEggs(preys)
+            eggs = getEggs(preys_pel)
             if depth_provider is not None:
                 eggs[:] *= depths
         if temperature_provider is not None:
@@ -488,12 +490,14 @@ class Mizer(object):
         
         y[:, prey_indices] = preys_pel_y + preys_ben_y
      #   y[:, prey_indices] = prey.getValues(t)
+        y_r=y.copy()
+        y_r [:, prey_indices]= preys_pel_y
         depth = None if depth_provider is None else depth_provider.get(t)
         temperature = None if temperature_provider is None else temperature_provider.get(t)
         ben_temperature = None if ben_temperature_provider is None else ben_temperature_provider.get(t)
         omega = None if omega_provider is None else omega_provider.get(t)
         if recruitment_from_prey:
-            y[:, ibin0] = getEggs(y[:, prey_indices])
+            y[:, ibin0] = getEggs(y_r[:, prey_indices])
             if depth is not None:
                 y[:, ibin0] *= depth
 
