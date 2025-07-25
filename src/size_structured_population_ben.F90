@@ -34,7 +34,7 @@ module mizer_size_structured_population_ben
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_reproduction_pel(:)    ! Reproduction per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_f_pel(:), id_f_ben(:)               ! Functional response per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_g_pel(:), id_g_ben(:)               ! Specific growth rate per size class
-      type (type_horizontal_diagnostic_variable_id)             :: id_omega_diag
+      type (type_horizontal_diagnostic_variable_id) ,allocatable:: id_omega_diag(:)
       type (type_dependency_id)                                 :: id_omega                 ! 
       type (type_dependency_id),allocatable                     :: id_pelspec(:), id_benspec(:)
       type (type_dependency_id)                                 :: id_T, id_T_b                  ! Temperature, bottom_temperature
@@ -53,10 +53,13 @@ module mizer_size_structured_population_ben
       integer  :: SRR         ! type of stock-recruitment relationship (SRR)
       real(rk) :: recruitment ! constant recruitment flux (SSR=0)
       real(rk) :: R_max       ! maximum recruitment flux (SSR=2)
+      real(rk) :: omega_threshold
 
       integer  :: T_dependence ! Type of temperature dependence (0: none, 1: Arrhenius)
       real(rk) :: c1           ! Reference constant in Arrhenius equation = E_a/k/(T_ref+Kelvin)
       real(rk) :: E_a          ! Activation energy (eV)
+
+      logical :: omega_size
 
       ! Size-class-dependent parameters that will be precomputed during initialization
       real(rk), allocatable :: V(:)            ! volumetric search rate (Eq M2)
@@ -182,8 +185,11 @@ contains
    
    !Add in paramter for time spent in bentos
    call self%register_dependency(self%id_omega, 'omega', '-', 'fraction of time that fish spend in the pelagic')  
-   call self%register_diagnostic_variable(self%id_omega_diag, 'omega_diag' ,'-', 'time fish spend in the pelagic', source=source_do_bottom)
-    
+
+ 
+  call self%get_parameter(self%omega_size,'omega_size','-',          'use of size dependant omega', default=.false.)
+   if (self%omega_size)    call self%get_parameter(self%omega_threshold,      'omega_threshold',  '-',    'size of fish above which spend some time in the benthos',  minimum=self%w_min, maximum=w_inf)
+       
 
     
    call self%configure(self%nclass, self%w_min, w_inf)
@@ -298,6 +304,7 @@ contains
    allocate(self%id_f_ben(self%nclass))
    allocate(self%id_g_pel(self%nclass))
    allocate(self%id_g_ben(self%nclass))
+   allocate(self%id_omega_diag(self%nclass))
    do iclass=1,self%nclass
       ! Postfix for size-class-specific variable names (an integer number)
       write (strindex,'(i0)') iclass
@@ -313,6 +320,7 @@ contains
       call self%register_diagnostic_variable(self%id_f_ben(iclass),           'f_ben'//trim(strindex),           '-',        'functional response of size class '//trim(strindex),                source=source_do_bottom)
       call self%register_diagnostic_variable(self%id_g_pel(iclass),           'g_pel'//trim(strindex),           'd-1',      'specific growth rate of individuals in size class '//trim(strindex),source=source_do_bottom)
       call self%register_diagnostic_variable(self%id_g_ben(iclass),           'g_ben'//trim(strindex),           'd-1',      'specific growth rate of individuals in size class '//trim(strindex),source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_omega_diag(iclass), 'omega_diag'//trim(strindex) ,            '-',      'time fish spend in the pelagic for size class '//trim(strindex), source=source_do_bottom)
    end do
 
    allocate(self%phi(self%nprey,self%nclass))
@@ -385,10 +393,10 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey
-      real(rk) :: E_e_pel, E_e_ben,E_a_pel, E_a_ben,f_pel, f_ben,total_reproduction,T_lim,temp,g_tot_pel, g_tot_ben,R,R_p,nflux_pel(0:self%nclass),nflux_ben(0:self%nclass), omega
+      real(rk) :: E_e_pel, E_e_ben,E_a_pel, E_a_ben,f_pel, f_ben,total_reproduction,T_lim,temp,g_tot_pel, g_tot_ben,R,R_p,nflux_pel(0:self%nclass),nflux_ben(0:self%nclass), omega_s
       real(rk) :: T_lim_bot, bot_temp
       real(rk),dimension(self%nprey)  :: Nw_prey,prey_loss_pel, prey_loss_ben, pelspec, benspec
-      real(rk),dimension(self%nclass) :: Nw,I_pel,I_ben, maintenance_pel, maintenance_ben,g_pel, g_ben,mu_pel, mu_ben,reproduction_pel
+      real(rk),dimension(self%nclass) :: Nw,I_pel,I_ben, maintenance_pel, maintenance_ben,g_pel, g_ben,mu_pel, mu_ben,reproduction_pel, reproduction_ben, omega
       real(rk), parameter :: delta_t = 12._rk/86400
 
 
@@ -419,8 +427,22 @@ contains
          !Determine fraction of time fish spend in pelagic based on ratio of pelagic to demersal food
          !Processing is done in gather forcing file/set as a parameter.  Here we just read it in:
          
-          _GET_(self%id_omega, omega)
-          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_omega_diag, omega)
+          _GET_(self%id_omega, omega_s)
+          do iclass=1,self%nclass
+              if (self%omega_size) then
+                  if (self%w(iclass) > self%omega_threshold) then
+                     omega(iclass)= omega_s
+                  else
+                     omega(iclass)=1._rk
+                  end if
+              else
+                 omega(iclass)=omega_s
+              end if
+               _SET_HORIZONTAL_DIAGNOSTIC_(self%id_omega_diag(iclass), omega(iclass))
+          end do
+
+         
+
 
          !Retrieve arrays for pelagic and benthic prey
          do iprey=1,self%nprey
@@ -446,11 +468,11 @@ contains
 
             ! Compute actual encounter (g prey s-1 g-1): availability per volume (g prey m-3) times mass-specific volumetric search rate (m3 g-1 s-1)
             E_e_pel = self%V(iclass)*E_a_pel ! Eq M3
-            E_e_ben = self%V(iclass)*E_a_ben ! Eq M3
+            E_e_ben = self%VB(iclass)*E_a_ben ! Eq M3
 
             ! Compute ingestion rate (g prey s-1 g-1) - per predator biomass!
-            f_pel = E_e_pel/(E_e_pel+self%I_max(iclass))   ! Eq M5
-            f_ben = E_e_ben/(E_e_ben+self%I_max(iclass))   ! Eq M5
+            f_pel = E_e_pel/(E_e_pel+E_e_ben+self%I_max(iclass))   ! Eq M5
+            f_ben = E_e_ben/(E_e_pel+E_e_ben+self%I_max(iclass))   ! Eq M5
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_f_pel(iclass),f_pel)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_f_ben(iclass),f_ben)
             I_pel(iclass) = T_lim*self%I_max(iclass)*f_pel ! ingestion part of M7
@@ -465,8 +487,12 @@ contains
             ! Account for this size class' ingestion in specific loss rate of all prey
             ! Units go from (g prey s-1 g-1) to (m s-1) - a relative bottom flux for prey concentration -
             ! by dividing by prey (g m-3) and multiply by predator (g m-2)
-            prey_loss_pel(:) = prey_loss_pel(:) + I_pel(iclass)/E_a_pel*self%phi(:,iclass)*Nw(iclass)
-            prey_loss_ben(:) = prey_loss_ben(:) + I_ben(iclass)/E_a_ben*self%phi(:,iclass)*Nw(iclass)
+            prey_loss_pel(:) = prey_loss_pel(:) + I_pel(iclass)/E_a_pel*self%phi(:,iclass)*Nw(iclass)*omega(iclass)
+            if (omega(iclass)/=1) then
+                prey_loss_ben(:) = prey_loss_ben(:) + I_ben(iclass)/E_a_ben*self%phi(:,iclass)*Nw(iclass)*(1-omega(iclass))
+            else
+                prey_loss_ben(:) = prey_loss_ben(:)
+            end if
          end do
 
 #ifndef NDEBUG
@@ -492,16 +518,18 @@ contains
 
             ! Avoid shrinking: limit maintenance to maximum sustainable value and increase starvation mortality.
             maintenance_pel(iclass) = min(maintenance_pel(iclass),self%alpha*I_pel(iclass))
+            maintenance_ben(iclass) = min(maintenance_ben(iclass),self%alpha*I_ben(iclass))
             mu_pel(iclass) = mu_pel(iclass) + max(0.0_rk,-g_tot_pel/self%w(iclass)/self%xi)
+            mu_ben(iclass) = mu_ben(iclass) + max(0.0_rk,-g_tot_ben/self%w(iclass)/self%xi)
             g_tot_pel = max(0.0_rk,g_tot_pel)
-
+            g_tot_ben = max(0.0_rk,g_tot_ben)
             ! Individual growth (s-1)
             g_pel(iclass) = (1-self%psi(iclass))*g_tot_pel ! Eq M7
             g_ben(iclass) = (1-self%psi(iclass))*g_tot_ben ! Eq M7
 
             ! Mass flux towards reproduction (g m-2 s-1) - sum over all individuals in this size class
-            reproduction_pel(iclass) = self%psi(iclass)*g_tot_pel*Nw(iclass)
-!            reproduction_ben(iclass) = self%psi(iclass)*g_tot_ben*Nw(iclass)
+            reproduction_pel(iclass) = omega(iclass)*self%psi(iclass)*g_tot_pel*Nw(iclass)
+            reproduction_ben(iclass) = (1._rk-omega(iclass))*self%psi(iclass)*g_tot_ben*Nw(iclass)
          end do
 
          ! Compute number of individuals moving from each size class to the next (units: # s-1)
@@ -512,7 +540,7 @@ contains
          ! Sum reproductive output of entire population in g m-2 s-1 (Eq 10 of Hartvig et al. 2011 JTB)
          ! Note: division by 2 is the result of the fact that reproductive output applies to females only,
          ! which are assumed to be 50% of the population.
-         total_reproduction = sum(reproduction_pel)
+         total_reproduction = sum(reproduction_pel+reproduction_ben)
          R_p = self%erepro / 2 * total_reproduction / self%w_min
 
          ! Use stock-recruitment relationship to translate density-independent recruitment into actual recruitment (units: # s-1)
@@ -536,15 +564,15 @@ contains
          ! Send prey consumption to FABM (combined impact of all size classes, per prey type)
          ! This is represented as a bottom flux for prey concentration (g m-2 s-1)
          do iprey = 1, self%nprey
-            _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey), omega*(-prey_loss_pel(iprey) * Nw_prey(iprey)))
-            _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey), (1._rk-omega)*(-prey_loss_ben(iprey) * Nw_prey(iprey)))
+            _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey), (-prey_loss_pel(iprey) * Nw_prey(iprey)))
+            _SET_BOTTOM_ODE_(self%id_Nw_prey(iprey), (-prey_loss_ben(iprey) * Nw_prey(iprey)))
          end do
 
          ! Transfer size-class-specific source terms and diagnostics to FABM
          do iclass = 1, self%nclass
             ! Apply specific mortality (s-1) to size-class-specific abundances and apply upwind advection - this is a time-explicit version of Eq G.1 of Hartvig et al.
-            _SET_BOTTOM_ODE_(self%id_Nw(iclass), (-(mu_pel(iclass) + self%F(iclass)) * Nw(iclass) + (nflux_pel(iclass - 1) - nflux_pel(iclass)) * self%w(iclass))*omega)
-            _SET_BOTTOM_ODE_(self%id_Nw(iclass), (-(mu_ben(iclass) + self%F(iclass)) * Nw(iclass) + (nflux_ben(iclass - 1) - nflux_ben(iclass)) * self%w(iclass))*(1._rk-omega))
+            _SET_BOTTOM_ODE_(self%id_Nw(iclass), (-(mu_pel(iclass) + self%F(iclass)) * Nw(iclass) + (nflux_pel(iclass - 1) - nflux_pel(iclass)) * self%w(iclass))*omega(iclass))
+            _SET_BOTTOM_ODE_(self%id_Nw(iclass), (-(mu_ben(iclass) + self%F(iclass)) * Nw(iclass) + (nflux_ben(iclass - 1) - nflux_ben(iclass)) * self%w(iclass))*(1._rk-omega(iclass)))
 
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g_pel(iclass), g_pel(iclass) * 86400)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g_ben(iclass), g_ben(iclass) * 86400)
@@ -554,8 +582,8 @@ contains
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_total_reproduction, total_reproduction * 86400)
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R_p, R_p * 86400)
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R, R * 86400)
-         _SET_BOTTOM_ODE_(self%id_waste, (sum(((1._rk - self%alpha) * I_pel + maintenance_pel + mu_pel) * Nw) + total_reproduction - R*self%w_min + nflux_pel(self%nclass) * (self%w(self%nclass) + self%delta_w(self%nclass)))*omega)
-         _SET_BOTTOM_ODE_(self%id_waste, (sum(((1._rk - self%alpha) * I_ben + maintenance_ben + mu_ben) * Nw) + total_reproduction - R*self%w_min + nflux_ben(self%nclass) * (self%w(self%nclass) + self%delta_w(self%nclass)))*(1._rk-omega))
+         _SET_BOTTOM_ODE_(self%id_waste, (sum(((1._rk - self%alpha) * I_pel + maintenance_pel + mu_pel) * Nw*omega) + total_reproduction - R*self%w_min*omega(1)  + nflux_pel(self%nclass) * (self%w(self%nclass) + self%delta_w(self%nclass)*omega(self%nclass))))
+         _SET_BOTTOM_ODE_(self%id_waste, (sum(((1._rk - self%alpha) * I_ben + maintenance_ben + mu_ben) * Nw*(1-omega)) + total_reproduction - R*self%w_min*(1-omega(1))  + nflux_ben(self%nclass) * (self%w(self%nclass) + self%delta_w(self%nclass)*(1._rk-omega(self%nclass)))))
          _SET_BOTTOM_ODE_(self%id_landings, sum(self%F * Nw))
       _HORIZONTAL_LOOP_END_
 
