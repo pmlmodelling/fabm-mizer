@@ -346,7 +346,7 @@ contains
    if (self%omega_size)    call self%get_parameter(self%omega_threshold,      'omega_threshold',  '-',    'size of fish above which spend some time in the benthos',  minimum=self%w_min, maximum=w_inf)
    
 !    allocate (self%id_omega_dia(self%nclass))
-    call self%register_diagnostic_variable(self%id_omega_dia, 'omega_dia' ,'-', 'time fish spend in the pelagic', source=source_do_bottom)
+ !   call self%register_diagnostic_variable(self%id_omega_dia, 'omega_dia' ,'-', 'time fish spend in the pelagic', source=source_do_bottom)
     
    ! Determine size classes (log-spaced between size at birth and infinite size)
    allocate(self%logw(self%nclass))
@@ -619,6 +619,7 @@ contains
    
    allocate(self%id_g_pel(self%nclass))
    allocate(self%id_g_ben(self%nclass))
+   allocate(self%id_omega_diag(self%nclass))
    do iclass=1, self%nclass
       ! Postfix for size-class-specific variable names (an integer number)
       write (strindex,'(i0)') iclass
@@ -663,6 +664,7 @@ contains
       call self%register_diagnostic_variable(self%id_f_ben(iclass),           'f_ben'//trim(strindex),           '-',        'functional response of size class '//trim(strindex),                source=source_do_bottom)
       call self%register_diagnostic_variable(self%id_g_pel(iclass),           'g_pel'//trim(strindex),           'd-1',      'specific growth rate of individuals in size class '//trim(strindex),source=source_do_bottom)
       call self%register_diagnostic_variable(self%id_g_ben(iclass),           'g_ben'//trim(strindex),           'd-1',      'specific growth rate of individuals in size class '//trim(strindex),source=source_do_bottom)
+      call self%register_diagnostic_variable(self%id_omega_diag(iclass), 'omega_diag'//trim(strindex) ,            '-',      'time fish spend in the pelagic for size class '//trim(strindex), source=source_do_bottom)
    end do
 
    allocate(self%phi(self%nprey,self%nclass))
@@ -932,6 +934,7 @@ contains
               else
                  omega(iclass)=omega_c
               end if
+               _SET_HORIZONTAL_DIAGNOSTIC_(self%id_omega_diag(iclass), omega(iclass))
           end do
          ! omega(1)=1._rk   ! Ensure that recruitment only goes into pelagic 
        !   PRINT*, omega
