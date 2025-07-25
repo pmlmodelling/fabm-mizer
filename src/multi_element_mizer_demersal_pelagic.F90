@@ -143,7 +143,7 @@ module mizer_multi_element_demersal_pelagic_population
       real(rk),allocatable :: delta_w(:)  ! mass difference between consecutive size classes
 
       ! Size-class-independent parameters
-      real(rk) :: w_min, w_min_ben       ! egg mass
+      real(rk) :: w_min    ! egg mass
       real(rk) :: alpha       ! assimilation efficiency
       real(rk) :: beta        ! preferred predator:prey mass ratio
       real(rk) :: sigma       ! s.d. of lognormal prey size selection function
@@ -256,7 +256,6 @@ contains
    call self%get_parameter(self%alpha_eg, 'alpha_eg',  '-',    'fraction of food egested', default=1-self%alpha,   minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(self%erepro,'erepro', '-',    'reproductive efficiency',            default=1.0_rk,   minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(self%w_min, 'w_min',  'g',    'egg mass',                           default=0.001_rk, minimum=0.0_rk)
-   call self%get_parameter(self%w_min_ben, 'w_min_ben',  'g',    'egg mass',                           default=0.001_rk, minimum=0.0_rk)
    call self%get_parameter(n,          'n',      '-',    'exponent of max. consumption',       default=2.0_rk/3.0_rk)
    call self%get_parameter(q,          'q',      '-',    'exponent of search volume',          default=0.8_rk)
    call self%get_parameter(qB,          'qB',      '-',    'benthic exponent of search volume',          default=q)
@@ -284,7 +283,6 @@ contains
    select case (self%SRR)
    case (0)
       call self%get_parameter(self%recruitment, 'recruitment', '# m-2 yr-1', 'constant recruitment flux', minimum=0.0_rk, default=kappa*self%w_min**(-lambda)*sec_per_year, scale_factor=1._rk/sec_per_year)
-    !  call self%get_parameter(self%recruitment_ben, 'recruitment_ben', '# m-2 yr-1', 'constant recruitment flux', minimum=0.0_rk, default=kappa*self%w_min_ben**(-lambda)*sec_per_year, scale_factor=1._rk/sec_per_year)
    case (2)
       call self%get_parameter(self%R_max, 'R_max','# m-2 yr-1','maximum recruitment flux', minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
    case (3)
@@ -463,8 +461,7 @@ contains
   ! allocate (demersal_size_spectrum)
   ! call demersal_size_spectrum%parameters%set_integer('nsource', self%nbenprey)
   ! call demersal_size_spectrum%parameters%set_integer('nsource_start', self%npelprey)
-  ! call demersal_size_spectrum%parameters%set_real('w_min', self%w_min_ben/self%beta**2)
-  ! call demersal_size_spectrum%parameters%set_real('w_max', self%w_min_ben)
+
    
    allocate (self%id_bprey_c(self%nbenprey ))
    allocate (self%id_bprey_n(self%nbenprey ))
@@ -1072,7 +1069,7 @@ contains
          total_reproduction = sum(reproduction)
         ! total_reproduction_ben = sum(reproduction_ben)
          R_p = self%erepro/2 * total_reproduction / (self%w_min/g_per_mmol_carbon)
-       !  R_p_ben = self%erepro/2 * total_reproduction_ben / (self%w_min_ben/g_per_mmol_carbon)
+
 
          ! Use stock-recruitment relationship to translate density-independent recruitment into actual recruitment (units: # s-1)
          if (self%SRR==0) then
@@ -1093,13 +1090,13 @@ contains
           !  _GET_HORIZONTAL_(self%id_benoffset, benoffset)
           !  _GET_HORIZONTAL_(self%id_benslope, benslope)
             endpoint = offset + slope * log(self%w_min)
-          !  endpoint_ben= benoffset + benslope * log(self%w_min_ben)
+
             expected_eggs= exp(endpoint) * self%delta_w(1)
           !  expected_eggs_ben= exp(endpoint_ben) * self%delta_w(1)
             R = max(expected_eggs - Nw(1), 0._rk)/(self%w_min/g_per_mmol_carbon) * self%R_relax
             
             !HP:need to think about whether want to use first size class for benthic fish
-           ! R_ben = max(expected_eggs_ben - Nw(1), 0._rk)/(self%w_min_ben/g_per_mmol_carbon) * self%R_relax
+
          end if
 
          ! Use recruitment as number of incoming individuals for the first size class.
