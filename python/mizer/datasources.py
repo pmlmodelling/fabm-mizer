@@ -29,7 +29,7 @@ class Constant(ValueProvider):
         return self.value
 
 class TimeSeries(ValueProvider):
-    def __init__(self, path, variable_name, scale_factor=1.0, time_name='time', stop=None, minimum=None, maximum=None, allow_mask=False, expressions={},bottom=False, **dim2index):
+    def __init__(self, path, variable_name, scale_factor=1.0, time_name='time', stop=None, minimum=None, maximum=None, allow_mask=False, expressions={},gotm_bottom=False, **dim2index):
         ValueProvider.__init__(self)
 
         self.times = None
@@ -72,8 +72,9 @@ class TimeSeries(ValueProvider):
                 self.data *= scale_factor
                 self.long_name = getattr(ncvar, 'long_name', variable_name)
                 self.units = getattr(ncvar, 'ncvar.units', '')
-                if bottom==True:
-                   self.data=self.data[:,-1]
+                if gotm_bottom==True:
+                   print ('temp_shape:{}'.format(self.data.shape))
+                   self.data=self.data[:,0]
             else:
                 class NcDict(object):
                     def __init__(self, nc):
