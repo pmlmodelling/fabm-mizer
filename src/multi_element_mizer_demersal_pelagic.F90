@@ -123,9 +123,10 @@ module mizer_multi_element_demersal_pelagic_population
       type (type_horizontal_diagnostic_variable_id)             :: id_c_lfi
       type (type_horizontal_diagnostic_variable_id)             :: id_test
       type (type_horizontal_diagnostic_variable_id), allocatable:: id_bprey_c(:), id_bprey_n(:),id_bprey_p(:),id_bprey_s(:)
-      type (type_horizontal_diagnostic_variable_id)             :: id_omega_dia
+      type (type_horizontal_diagnostic_variable_id), allocatable          :: id_omega_diag(:)
       type (type_horizontal_diagnostic_variable_id)             :: id_fish_benDIP,id_fish_benDIC, id_fish_benDIN, id_benO2_fish
       type (type_horizontal_diagnostic_variable_id)             :: id_fish_benPOC, id_fish_benPON, id_fish_benPOP, id_fish_benPOS
+      type (type_horizontal_diagnostic_variable_id)             :: id_w_int_diag, id_total_ben_prey
 
       real(rk)                                                  :: w_threshold
       real(rk)                                                  :: w_threshold2
@@ -713,6 +714,10 @@ contains
    call self%register_diagnostic_variable(self%id_fish_benPON,'fish_benPON','mmol m-2 d-1','benthic fish egestion of PON',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_fish_benPOP,'fish_benPOP','mmol m-2 d-1','benthic fish egestion of POP',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_fish_benPOS,'fish_benPOS','mmol m-2 d-1','benthic fish egestion of POS',source=source_do_bottom)
+   
+   call self%register_diagnostic_variable(self%id_total_ben_prey,'total_ben_prey','mmol m-2','integral of benthic prey',source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_w_int_diag,'w_int_diag','mmol m-2 ','depth integral of pelagic prey',source=source_do_bottom)
+
 
    call self%register_state_variable(self%id_landings, 'landings', 'g m-2', 'landed biomass')
    call self%add_to_aggregate_variable(standard_variables%total_carbon, self%id_landings, scale_factor=1.0_rk/g_per_mmol_carbon)
@@ -919,10 +924,14 @@ contains
                   end if
              end do
              omega_c=w_int/(w_int+total_ben_prey)
+             
               
          else
              omega_c=self%omega
           end if
+          !To remove later
+          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_w_int_diag,  w_int)
+          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_total_ben_prey, total_ben_prey)
           
           do iclass=1,self%nclass
               if (self%omega_size) then
