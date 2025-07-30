@@ -54,6 +54,7 @@ module mizer_multi_element_population
       type (type_bottom_state_variable_id)                      :: id_discard_n
       type (type_bottom_state_variable_id)                      :: id_discard_p
       type (type_bottom_state_variable_id)                      :: id_landings           ! State variable that will serve as sink for all landed biomass
+      
       type (type_horizontal_diagnostic_variable_id)             :: id_total_reproduction ! Total reproduction
       type (type_horizontal_diagnostic_variable_id)             :: id_R_p                ! Density-independent recruitment
       type (type_horizontal_diagnostic_variable_id)             :: id_R                  ! Density-dependent recruitment
@@ -63,6 +64,7 @@ module mizer_multi_element_population
       type (type_dependency_id),                    allocatable :: id_pelprey_c(:)
 
       type (type_horizontal_dependency_id) :: id_slope, id_offset
+      type (type_horizontal_dependency_id)                      :: id_fishing_pressure
 
       type (type_horizontal_dependency_id)                      :: id_T_w_int
       type (type_horizontal_dependency_id)                      :: id_w_int
@@ -101,6 +103,7 @@ module mizer_multi_element_population
       real(rk) :: qnc         ! nitrogen:carbon ratio (mol:mol, constant)
       real(rk) :: qpc         ! phosphorus:carbon ratio (mol:mol, constant)
       real(rk) :: alpha_eg    ! fraction of food that is egested
+      real(rk) :: w_minF
 
       integer  :: T_dependence ! Type of temperature dependence (0: none, 1: Arrhenius)
       real(rk) :: c1           ! Reference constant in Arrhenius equation = E_a/k/(T_ref+Kelvin)
@@ -108,6 +111,7 @@ module mizer_multi_element_population
       real(rk) :: resp_o2C      ! oxygen used per carbon respired (mol:mol,constant)
 
       logical :: feedback
+      logical :: spatial_fishing
 
       ! Size-class-dependent parameters that will be precomputed during initialization
       real(rk), allocatable :: V(:)            ! volumetric search rate (Eq M2)
@@ -158,7 +162,7 @@ contains
    real(rk)           :: z0pre,z0exp,w_s,z_s,z_spre
    real(rk)           :: kappa,lambda
    real(rk)           :: T_ref
-   real(rk)           :: S1,S2,F,w_minF,F_a,F_b
+   real(rk)           :: S1,S2,F,F_a,F_b !,w_minF
    integer            :: z0_type
    integer            :: fishing_type
    real(rk)           :: w_prey_min, w_prey_max
@@ -301,29 +305,39 @@ contains
 
    ! Fishing mortality
    self%F = 0.0_rk
+   
    call self%get_parameter(fishing_type,'fishing_type', '', 'fishing regime (0: none, 1: constant/knife-edge, 2: logistic)',default=0, minimum=0, maximum=3)
-   if (fishing_type > 0) call self%get_parameter(w_minF, 'w_minF', 'g', 'minimum mass for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
+   call self%get_parameter(self%spatial_fishing,'spatial_fishing', '', 'whether fishing is applied spatially', default=.False.)
+   
+   if (fishing_type > 0) call self%get_parameter(self%w_minF, 'w_minF', 'g', 'minimum mass for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
    select case (fishing_type)
    case (1)
       ! constant
-      call self%get_parameter(F, 'F', 'yr-1', 'fishing effort', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
-      do iclass=1,self%nclass
-         if (self%w(iclass) > w_minF) self%F(iclass) = F
-      end do
+      if (self%spatial_fishing) then
+          call self%register_dependency(self%id_fishing_pressure, 'fishing_pressure', 'yr-1', 'fishing_pressure') 
+       !   call self%register_dependency(self%id_w_int, 'w_int', '', 'depth-integrated weight')
+      else
+          call self%get_parameter(F, 'F', 'yr-1', 'fishing effort', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+          do iclass=1,self%nclass
+             if (self%w(iclass) > self%w_minF) self%F(iclass) = F
+          end do
+      end if
+      
+
    case (2)
       ! mizer fishing mortality [s-1]; Eqs M13 and M14 combined
       call self%get_parameter(F,  'F',  'yr-1', 'maximum fishing effort',                        default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
       call self%get_parameter(S1, 'S1', '-',    'offset for fishing selectivity exponent',       default=0.0_rk, minimum=0.0_rk)
       call self%get_parameter(S2, 'S2', 'g-1',  'scale factor for fishing selectivity exponent', default=0.0_rk, minimum=0.0_rk)
       do iclass=1, self%nclass
-         if (self%w(iclass) > w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))
+         if (self%w(iclass) > self%w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))
       end do
    case (3)
       ! linearly increasing mortality as in Blanchard et al 2009 J Anim Ecol
       call self%get_parameter(F_a, 'F_a', 'yr-1 (log10 g)-1', 'scale factor for fishing mortality as function of log10 mass', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
       call self%get_parameter(F_b, 'F_b', 'yr-1', 'offset for fishing mortality as function of log10 mass', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
       do iclass=1, self%nclass
-         if (self%w(iclass) > w_minF) self%F(iclass) = F_a * log10(self%w(iclass)) + F_b
+         if (self%w(iclass) > self%w_minF) self%F(iclass) = F_a * log10(self%w(iclass)) + F_b
       end do
    end select
 
@@ -601,10 +615,10 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey,istate
-      real(rk) :: c_lfi, c_size1,c_size2, c_size3, slope, offset, endpoint, expected_eggs
+      real(rk) :: c_lfi, c_size1,c_size2, c_size3, slope, offset, endpoint, expected_eggs, FP
       real(rk) :: E_e,E_a_c,E_a_n,E_a_p,E_a_s,f,total_reproduction,T_lim,temp,T_w_int,w_int,g_tot,R,R_p,nflux(0:self%nclass),prey_state,g_tot_c,g_tot_n,g_tot_p
       real(rk),dimension(self%nprey)  :: prey_c,prey_n,prey_p,prey_s,prey_loss
-      real(rk),dimension(self%nclass) :: Nw,I_c,I_n,I_p,I_s,maintenance,g,mu,reproduction
+      real(rk),dimension(self%nclass) :: Nw,I_c,I_n,I_p,I_s,maintenance,g,mu,reproduction, Fi
       real(rk), parameter :: delta_t = 900
 
       _HORIZONTAL_LOOP_BEGIN_
@@ -645,6 +659,16 @@ contains
          else
             T_lim = 1
          end if
+        
+         !Get parameter for fishing
+         if (self%spatial_fishing) then
+             _GET_HORIZONTAL_(self%id_fishing_pressure, FP)
+             do iclass=1,self%nclass
+                 if (self%w(iclass) > self%w_minF) Fi(iclass) = FP
+             end do
+         end if 
+
+
 
          ! Food uptake (all size classes, all prey types)
          ! This computes total ingestion per size class (over all prey), and total loss per prey type (over all size classes)
@@ -703,7 +727,12 @@ contains
             g_tot_p = self%alpha*I_p(iclass)
 
             ! Specific growth rate (s-1) is minimum supported by different resources.
-            g_tot = min(g_tot_c, g_tot_n/self%qnc, g_tot_p/self%qpc)
+            
+            if (self%feedback) then
+                    g_tot= min(g_tot_c, g_tot_n/self%qnc, g_tot_p/self%qpc)
+            else
+                    g_tot = g_tot_c
+            endif
 
             ! Avoid shrinking: limit maintenance to maximum sustainable value and increase starvation mortality.
             maintenance(iclass) = min(maintenance(iclass),self%alpha*I_c(iclass))
