@@ -666,9 +666,11 @@ contains
              do iclass=1,self%nclass
                  if (self%w(iclass) > self%w_minF) Fi(iclass) = FP
              end do
+         else
+            Fi = self%F
          end if 
 
-
+     
 
          ! Food uptake (all size classes, all prey types)
          ! This computes total ingestion per size class (over all prey), and total loss per prey type (over all size classes)
@@ -794,7 +796,7 @@ contains
          ! Transfer size-class-specific source terms and diagnostics to FABM
          do iclass=1,self%nclass
             ! Apply specific mortality (s-1) to size-class-specific abundances and apply upwind advection - this is a time-explicit version of Eq G.1 of Hartvig et al.
-            _SET_BOTTOM_ODE_(self%id_c(iclass),-(mu(iclass) + self%F(iclass))*Nw(iclass) + (nflux(iclass-1)-nflux(iclass))*self%w(iclass)/g_per_mmol_carbon)
+            _SET_BOTTOM_ODE_(self%id_c(iclass),-(mu(iclass) + Fi(iclass))*Nw(iclass) + (nflux(iclass-1)-nflux(iclass))*self%w(iclass)/g_per_mmol_carbon)
 
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g(iclass),g(iclass)*86400)
             if (self%SRR == 1 .or. self%SRR == 2) then
@@ -819,7 +821,7 @@ contains
             _SET_BOTTOM_ODE_(self%id_waste_p,sum(((self%alpha+self%alpha_eg)*I_p + (mu - g/(1-self%psi))*self%qpc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qpc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)
             _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s*Nw))
          end if
-         _SET_BOTTOM_ODE_(self%id_landings,sum(self%F*Nw*g_per_mmol_carbon))
+         _SET_BOTTOM_ODE_(self%id_landings,sum(F*Nw*g_per_mmol_carbon))
       _HORIZONTAL_LOOP_END_
 
    end subroutine do_bottom
