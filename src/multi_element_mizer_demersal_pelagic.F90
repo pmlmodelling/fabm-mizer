@@ -159,6 +159,7 @@ module mizer_multi_element_demersal_pelagic_population
       real(rk) :: qpc         ! phosphorus:carbon ratio (mol:mol, constant)
       real(rk) :: alpha_eg    ! fraction of food that is egested
       real(rk) :: omega, omega_threshold    ! fraction of time that fish spend in pelagic
+      real(rk) :: w_minF
 
       integer  :: T_dependence ! Type of temperature dependence (0: none, 1: Arrhenius)
       real(rk) :: c1           ! Reference constant in Arrhenius equation = E_a/k/(T_ref+Kelvin)
@@ -227,7 +228,7 @@ contains
    real(rk)           :: z0pre,z0exp,w_s,z_s,z_spre
    real(rk)           :: kappa,lambda
    real(rk)           :: T_ref
-   real(rk)           :: S1,S2,F,w_minF,F_a,F_b
+   real(rk)           :: S1,S2,F,F_a,F_b!w_minF
    integer            :: z0_type
    integer            :: fishing_type
    real(rk)           :: w_prey_min, w_prey_max
@@ -420,14 +421,14 @@ contains
       call self%get_parameter(S1, 'S1', '-',    'offset for fishing selectivity exponent',       default=0.0_rk, minimum=0.0_rk)
       call self%get_parameter(S2, 'S2', 'g-1',  'scale factor for fishing selectivity exponent', default=0.0_rk, minimum=0.0_rk)
       do iclass=1, self%nclass
-         if (self%w(iclass) > w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))
+         if (self%w(iclass) > self%w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))
       end do
    case (3)
       ! linearly increasing mortality as in Blanchard et al 2009 J Anim Ecol
       call self%get_parameter(F_a, 'F_a', 'yr-1 (log10 g)-1', 'scale factor for fishing mortality as function of log10 mass', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
       call self%get_parameter(F_b, 'F_b', 'yr-1', 'offset for fishing mortality as function of log10 mass', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
       do iclass=1, self%nclass
-         if (self%w(iclass) > w_minF) self%F(iclass) = F_a * log10(self%w(iclass)) + F_b
+         if (self%w(iclass) > self%w_minF) self%F(iclass) = F_a * log10(self%w(iclass)) + F_b
       end do
    end select
 
@@ -867,7 +868,7 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey,istate
-      real(rk) :: c_lfi, c_size1,c_size2, c_size3, slope, offset, endpoint, expected_eggs
+      real(rk) :: c_lfi, c_size1,c_size2, c_size3, slope, offset, endpoint, expected_eggs,FP
       real(rk) :: total_reproduction,T_lim,T_lim_bot,temp,bot_temp,T_w_int,w_int,g_tot_pel, g_tot_ben
       real(rk) :: R,R_p
       real(rk) :: nflux_pel(0:self%nclass),nflux_ben(0:self%nclass),prey_state
