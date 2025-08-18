@@ -868,7 +868,7 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey,istate
-      real(rk) :: c_lfi, c_size1,c_size2, c_size3, slope, offset, endpoint, expected_eggs,FP
+      real(rk) :: c_lfi, c_size1,c_size2, c_size3, slope, offset, endpoint, expected_eggs,FP, FPs
       real(rk) :: total_reproduction,T_lim,T_lim_bot,temp,bot_temp,T_w_int,w_int,g_tot_pel, g_tot_ben
       real(rk) :: R,R_p
       real(rk) :: nflux_pel(0:self%nclass),nflux_ben(0:self%nclass),prey_state
@@ -879,7 +879,7 @@ contains
       real(rk),dimension(self%nprey)  :: prey_c,prey_n,prey_p,prey_s,prey_loss_pel, prey_loss_ben
       real(rk),dimension(self%nclass) :: Nw,I_c_pel, I_c_ben,I_n_pel,I_p_pel,I_s_pel,I_n_ben,I_p_ben,I_s_ben, omega
       real(rk),dimension(self%nclass) :: mu_pel,reproduction,maintenance_pel,g_pel,maintenance_ben,g_ben,mu_ben,Fi
-      real(rk), parameter :: delta_t = 900
+      real(rk), parameter :: delta_t = 900, sec_per_year = 86400*365.2425_rk
 
 
       _HORIZONTAL_LOOP_BEGIN_
@@ -927,12 +927,15 @@ contains
             T_lim = 1._rk
             T_lim_bot=1._rk
          end if
+         
 
+         Fi=0._rk
          !Get parameter for fishing
          if (self%spatial_fishing) then
              _GET_HORIZONTAL_(self%id_fishing_pressure, FP)
+             FPs = FP*1._rk/sec_per_year
              do iclass=1,self%nclass
-                 if (self%w(iclass) > self%w_minF) Fi(iclass) = FP
+                 if (self%w(iclass) > self%w_minF) Fi(iclass) = FPs
              end do
          else
             Fi = self%F
