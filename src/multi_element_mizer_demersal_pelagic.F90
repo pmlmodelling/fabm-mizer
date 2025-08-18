@@ -112,6 +112,7 @@ module mizer_multi_element_demersal_pelagic_population
 
       type (type_horizontal_dependency_id) :: id_slope, id_offset
       type (type_horizontal_dependency_id) :: id_benslope, id_benoffset
+      type (type_horizontal_dependency_id)                      :: id_fishing_pressure
 
       type (type_horizontal_dependency_id)                      :: id_T_w_int
       type (type_horizontal_dependency_id)                      :: id_w_int
@@ -165,6 +166,7 @@ module mizer_multi_element_demersal_pelagic_population
       real(rk) :: resp_o2C      ! oxygen used per carbon respired (mol:mol,constant)
 
       logical :: feedback
+      logical :: spatial_fishing
       logical :: isben        ! Argument to define whether resource is pelagic or benthic
       logical :: emergent_omega, omega_size
 
@@ -394,14 +396,24 @@ contains
    ! Fishing mortality
    self%F = 0.0_rk
    call self%get_parameter(fishing_type,'fishing_type', '', 'fishing regime (0: none, 1: constant/knife-edge, 2: logistic)',default=0, minimum=0, maximum=3)
-   if (fishing_type > 0) call self%get_parameter(w_minF, 'w_minF', 'g', 'minimum mass for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
+ !  if (fishing_type > 0) call self%get_parameter(w_minF, 'w_minF', 'g', 'minimum mass for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
+   call self%get_parameter(self%spatial_fishing,'spatial_fishing', '', 'whether fishing is applied spatially', default=.False.)
+   
+   if (fishing_type > 0) call self%get_parameter(self%w_minF, 'w_minF', 'g', 'minimum mass for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
    select case (fishing_type)
    case (1)
       ! constant
-      call self%get_parameter(F, 'F', 'yr-1', 'fishing effort', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
-      do iclass=1,self%nclass
-         if (self%w(iclass) > w_minF) self%F(iclass) = F
-      end do
+      if (self%spatial_fishing) then
+          call self%register_dependency(self%id_fishing_pressure, 'fishing_pressure', 'yr-1', 'fishing_pressure') 
+       !   call self%register_dependency(self%id_w_int, 'w_int', '', 'depth-integrated weight')
+      else
+          call self%get_parameter(F, 'F', 'yr-1', 'fishing effort', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+          do iclass=1,self%nclass
+             if (self%w(iclass) > self%w_minF) self%F(iclass) = F
+          end do
+      end if
+      
+
    case (2)
       ! mizer fishing mortality [s-1]; Eqs M13 and M14 combined
       call self%get_parameter(F,  'F',  'yr-1', 'maximum fishing effort',                        default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
@@ -865,7 +877,7 @@ contains
       real(rk) :: g_tot_c_pel,g_tot_n_pel,g_tot_p_pel,g_tot_c_ben,g_tot_n_ben,g_tot_p_ben
       real(rk),dimension(self%nprey)  :: prey_c,prey_n,prey_p,prey_s,prey_loss_pel, prey_loss_ben
       real(rk),dimension(self%nclass) :: Nw,I_c_pel, I_c_ben,I_n_pel,I_p_pel,I_s_pel,I_n_ben,I_p_ben,I_s_ben, omega
-      real(rk),dimension(self%nclass) :: mu_pel,reproduction,maintenance_pel,g_pel,maintenance_ben,g_ben,mu_ben
+      real(rk),dimension(self%nclass) :: mu_pel,reproduction,maintenance_pel,g_pel,maintenance_ben,g_ben,mu_ben,Fi
       real(rk), parameter :: delta_t = 900
 
 
@@ -914,6 +926,16 @@ contains
             T_lim = 1._rk
             T_lim_bot=1._rk
          end if
+
+         !Get parameter for fishing
+         if (self%spatial_fishing) then
+             _GET_HORIZONTAL_(self%id_fishing_pressure, FP)
+             do iclass=1,self%nclass
+                 if (self%w(iclass) > self%w_minF) Fi(iclass) = FP
+             end do
+         else
+            Fi = self%F
+         end if 
 
          !Determine fraction of time fish spend in pelagic based on ratio of pelagic to demersal food
          if (self%emergent_omega) then
@@ -1163,8 +1185,8 @@ contains
          ! Transfer size-class-specific source terms and diagnostics to FABM
          do iclass=1,self%nclass
             ! Apply specific mortality (s-1) to size-class-specific abundances and apply upwind advection - this is a time-explicit version of Eq G.1 of Hartvig et al.
-            _SET_BOTTOM_ODE_(self%id_c(iclass),(-(mu_pel(iclass) + self%F(iclass))*Nw(iclass) + (nflux_pel(iclass-1)-nflux_pel(iclass))*self%w(iclass)/g_per_mmol_carbon)*omega(iclass))
-            _SET_BOTTOM_ODE_(self%id_c(iclass),(-(mu_ben(iclass) + self%F(iclass))*Nw(iclass) + (nflux_ben(iclass-1)-nflux_ben(iclass))*self%w(iclass)/g_per_mmol_carbon)*(1._rk-omega(iclass)))
+            _SET_BOTTOM_ODE_(self%id_c(iclass),(-(mu_pel(iclass) +Fi(iclass))*Nw(iclass) + (nflux_pel(iclass-1)-nflux_pel(iclass))*self%w(iclass)/g_per_mmol_carbon)*omega(iclass))
+            _SET_BOTTOM_ODE_(self%id_c(iclass),(-(mu_ben(iclass) + Fi(iclass))*Nw(iclass) + (nflux_ben(iclass-1)-nflux_ben(iclass))*self%w(iclass)/g_per_mmol_carbon)*(1._rk-omega(iclass)))
             
             
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g_pel(iclass),g_pel(iclass)*86400)
@@ -1218,7 +1240,7 @@ contains
   
             
          end if
-         _SET_BOTTOM_ODE_(self%id_landings,sum(self%F*Nw*g_per_mmol_carbon))
+         _SET_BOTTOM_ODE_(self%id_landings,sum(Fi*Nw*g_per_mmol_carbon))
       _HORIZONTAL_LOOP_END_
 
    end subroutine do_bottom
