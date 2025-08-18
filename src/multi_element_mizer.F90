@@ -821,7 +821,7 @@ contains
             _SET_BOTTOM_ODE_(self%id_waste_p,sum(((self%alpha+self%alpha_eg)*I_p + (mu - g/(1-self%psi))*self%qpc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qpc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)
             _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s*Nw))
          end if
-         _SET_BOTTOM_ODE_(self%id_landings,sum(F*Nw*g_per_mmol_carbon))
+         _SET_BOTTOM_ODE_(self%id_landings,sum(Fi*Nw*g_per_mmol_carbon))
       _HORIZONTAL_LOOP_END_
 
    end subroutine do_bottom
