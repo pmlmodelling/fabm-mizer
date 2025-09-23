@@ -867,14 +867,14 @@ contains
       class (type_multi_element_demersal_pelagic_population),intent(in) :: self
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
-      integer :: iclass,iprey,istate
+      integer :: iclass,iprey,istatei,b
       real(rk) :: c_lfi, c_size1,c_size2, c_size3, slope, offset, endpoint, expected_eggs,FP, FPs
       real(rk) :: total_reproduction,T_lim,T_lim_bot,temp,bot_temp,T_w_int,w_int,g_tot_pel, g_tot_ben
       real(rk) :: R,R_p
       real(rk) :: nflux_pel(0:self%nclass),nflux_ben(0:self%nclass),prey_state
       real(rk) :: E_e_pel,E_a_c_pel,E_a_n_pel,E_a_p_pel,E_a_s_pel,E_e_ben,E_a_c_ben,E_a_n_ben,E_a_p_ben,E_a_s_ben
       real(rk) :: f_pel,f_ben
-      real(rk) :: ETW,b, omega_c,total_ben_prey
+      real(rk) :: ETW, omega_c,total_ben_prey
       real(rk) :: g_tot_c_pel,g_tot_n_pel,g_tot_p_pel,g_tot_c_ben,g_tot_n_ben,g_tot_p_ben
       real(rk),dimension(self%nprey)  :: prey_c,prey_n,prey_p,prey_s,prey_loss_pel, prey_loss_ben
       real(rk),dimension(self%nclass) :: Nw,I_c_pel, I_c_ben,I_n_pel,I_p_pel,I_s_pel,I_n_ben,I_p_ben,I_s_ben, omega
@@ -1160,7 +1160,7 @@ contains
             elseif (self%feedback) then
                ! Prey is an external variable (not one of our size classes)
                    if (self%prey(iprey)%isben) then
-                        b=b+1._rk
+                        b=b+1
                   !     do istate=1,size(self%id_prey(iprey)%state)
                    !      _GET_(self%id_prey(iprey)%state(istate),preyP) 
                    !      _SET_ODE_(self%id_prey(iprey)%state(istate),-(1._rk-self%omega)*prey_loss_ben(iprey)*preyP)
