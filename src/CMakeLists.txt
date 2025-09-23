@@ -7,7 +7,6 @@ add_library(fabm_models_mizer OBJECT
             multi_element_mizer.F90
             multi_element_support.F90
             multi_element_mizer_demersal_pelagic.F90
-	    multi_element_mizer_demersal_pelagic_bsdo.F90
 	    size_structured_population_ben.F90
            )
 

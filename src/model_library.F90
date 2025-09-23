@@ -7,7 +7,7 @@ module mizer_model_library
    use mizer_prey
    use mizer_multi_element_population
    use mizer_multi_element_demersal_pelagic_population
-   use mizer_multi_element_dem_pelagic_population
+!   use mizer_multi_element_dem_pelagic_population
    use mizer_size_structured_population_ben
    ! Add new mizer models here
 
@@ -36,7 +36,7 @@ contains
          case ('resource_spectrum');          allocate(type_resource_spectrum::model)
          case ('prey');                       allocate(type_prey::model)
          case ('multi_element_demersal_pelagic_population');   allocate(type_multi_element_demersal_pelagic_population::model)
-         case ('multi_element_dem_pelagic_population');   allocate(type_multi_element_dem_pelagic_population::model)
+!         case ('multi_element_dem_pelagic_population');   allocate(type_multi_element_dem_pelagic_population::model)
          case ('size_structured_population_ben'); allocate(type_size_structured_population_ben::model)
 
          ! Add new mizer models here
