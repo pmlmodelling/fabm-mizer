@@ -76,6 +76,8 @@ module mizer_multi_element_demersal_pelagic_population
       type (type_bottom_state_variable_id)                      :: id_discard_n
       type (type_bottom_state_variable_id)                      :: id_discard_p
       type (type_bottom_state_variable_id)                      :: id_landings           ! State variable that will serve as sink for all landed biomass
+      type (type_bottom_state_variable_id)                      :: id_pellandings           ! State variable that will serve as sink for all landed biomass
+      type (type_bottom_state_variable_id)                      :: id_benlandings           ! State variable that will serve as sink for all landed biomass
       
       type (type_state_variable_id)                      :: id_beno2
       type (type_state_variable_id)                      :: id_bendic
@@ -737,6 +739,16 @@ contains
    call self%add_to_aggregate_variable(standard_variables%total_nitrogen, self%id_landings, scale_factor=self%qnc/g_per_mmol_carbon)
    call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_landings, scale_factor=self%qpc/g_per_mmol_carbon)
 
+   call self%register_state_variable(self%id_pellandings, 'pellandings', 'g m-2', 'pelagic fish landed biomass')
+   call self%add_to_aggregate_variable(standard_variables%total_carbon, self%id_pellandings, scale_factor=1.0_rk/g_per_mmol_carbon)
+   call self%add_to_aggregate_variable(standard_variables%total_nitrogen, self%id_pellandings, scale_factor=self%qnc/g_per_mmol_carbon)
+   call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_pellandings, scale_factor=self%qpc/g_per_mmol_carbon)
+   
+   call self%register_state_variable(self%id_benlandings, 'benlandings', 'g m-2', 'demersal fish landed biomass')
+   call self%add_to_aggregate_variable(standard_variables%total_carbon, self%id_benlandings, scale_factor=1.0_rk/g_per_mmol_carbon)
+   call self%add_to_aggregate_variable(standard_variables%total_nitrogen, self%id_benlandings, scale_factor=self%qnc/g_per_mmol_carbon)
+   call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_benlandings, scale_factor=self%qpc/g_per_mmol_carbon)
+   
    ! Register diagnostic for total offspring production across population.
    if (self%SRR == 1 .or. self%SRR == 2) then
       call self%register_diagnostic_variable(self%id_total_reproduction,'total_reproduction','mmol C m-2 d-1','total pelagic reproduction',source=source_do_bottom)
@@ -1245,6 +1257,8 @@ contains
             
          end if
          _SET_BOTTOM_ODE_(self%id_landings,sum(Fi*Nw*g_per_mmol_carbon))
+         _SET_BOTTOM_ODE_(self%id_pellandings,sum(Fi*Nw*omega*g_per_mmol_carbon))
+         _SET_BOTTOM_ODE_(self%id_benlandings,sum(Fi*Nw*(1._rk-omega)*g_per_mmol_carbon))
       _HORIZONTAL_LOOP_END_
 
    end subroutine do_bottom
