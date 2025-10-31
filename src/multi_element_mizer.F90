@@ -707,9 +707,9 @@ contains
 
             ! Specific growth rate (s-1) is minimum supported by different resources.
             g_tot = min(g_tot_c, g_tot_n/self%qnc, g_tot_p/self%qpc)
-            excess_c(iclass) = min(0.0_rk,(g_tot_c - g_tot)/self%w(iclass)/self%xi)
-            excess_n(iclass) = min(0.0_rk,(g_tot_n/self%qnc - g_tot)/self%w(iclass)/self%xi)
-            excess_p(iclass) = min(0.0_rk,(g_tot_p/self%qpc - g_tot)/self%w(iclass)/self%xi)
+            excess_c(iclass) = max(0.0_rk,(g_tot_c - g_tot)/self%w(iclass)/self%xi)
+            excess_n(iclass) = max(0.0_rk,(g_tot_n/self%qnc - g_tot)/self%w(iclass)/self%xi)
+            excess_p(iclass) = max(0.0_rk,(g_tot_p/self%qpc - g_tot)/self%w(iclass)/self%xi)
 
             ! Avoid shrinking: limit maintenance to maximum sustainable value and increase starvation mortality.
             maintenance(iclass) = min(maintenance(iclass),self%alpha*I_c(iclass))
