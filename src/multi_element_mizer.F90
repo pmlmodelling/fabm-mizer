@@ -783,11 +783,11 @@ contains
 
          ! Compute waste fluxes: total ingestion plus mortality, minus mass used in growth, minus recruitment, plus growth over right edge of resolved size range.
          if (self%feedback) then
-            _SET_BOTTOM_ODE_(self%id_o2,-self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c*Nw))
-            _SET_BOTTOM_ODE_(self%id_dic,(1-self%alpha-self%alpha_eg)*sum(I_c*Nw))
+            _SET_BOTTOM_ODE_(self%id_o2,-self%resp_o2C*sum(((1-self%alpha-self%alpha_eg)*I_c+maintenance)*Nw))
+            _SET_BOTTOM_ODE_(self%id_dic,sum(((1-self%alpha-self%alpha_eg)*I_c+maintenance)*Nw))
             _SET_BOTTOM_ODE_(self%id_din,(1-self%alpha-self%alpha_eg)*sum(I_n*Nw))
             _SET_BOTTOM_ODE_(self%id_dip,(1-self%alpha-self%alpha_eg)*sum(I_p*Nw))
-            _SET_BOTTOM_ODE_(self%id_waste_c,sum(((self%alpha+self%alpha_eg)*I_c +  mu - g/(1-self%psi)          )*Nw) - R*self%w_min/g_per_mmol_carbon          + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)
+            _SET_BOTTOM_ODE_(self%id_waste_c,sum(((self%alpha+self%alpha_eg)*I_c +  mu - g/(1-self%psi) - maintenance)*Nw) - R*self%w_min/g_per_mmol_carbon          + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)
             _SET_BOTTOM_ODE_(self%id_waste_n,sum(((self%alpha+self%alpha_eg)*I_n + (mu - g/(1-self%psi))*self%qnc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qnc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)
             _SET_BOTTOM_ODE_(self%id_waste_p,sum(((self%alpha+self%alpha_eg)*I_p + (mu - g/(1-self%psi))*self%qpc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qpc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)
             _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s*Nw))
