@@ -186,6 +186,10 @@ contains
    call self%get_parameter(self%nprey, 'nprey',  '',     'number of prey')
    call self%get_parameter(self%alpha, 'alpha',  '-',    'assimilation efficiency',            default=0.6_rk,   minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(self%alpha_eg, 'alpha_eg',  '-',    'fraction of food egested', default=1-self%alpha,   minimum=0.0_rk, maximum=1.0_rk)
+#ifndef NDEBUG
+   if ((self%alpha + self%alpha_eg) > 1.0_rk) &
+      call self%fatal_error('initialize','Total efficiency is greater than one')
+#endif
    call self%get_parameter(self%erepro,'erepro', '-',    'reproductive efficiency',            default=1.0_rk,   minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(self%w_min, 'w_min',  'g',    'egg mass',                           default=0.001_rk, minimum=0.0_rk)
    call self%get_parameter(n,          'n',      '-',    'exponent of max. consumption',       default=2.0_rk/3.0_rk)
@@ -709,6 +713,7 @@ contains
 
             ! Avoid shrinking: limit maintenance to maximum sustainable value and increase starvation mortality.
             maintenance(iclass) = min(maintenance(iclass),self%alpha*I_c(iclass))
+            ! Hartvig 2011 eq. 13, assumes a lipid reserve proportional to body size.
             mu(iclass) = mu(iclass) + max(0.0_rk,-g_tot/self%xi) 
             g_tot = max(0.0_rk,g_tot)
            
