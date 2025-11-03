@@ -72,19 +72,23 @@ module mizer_multi_element_demersal_pelagic_population
       type (type_bottom_state_variable_id)                      :: id_dic
       type (type_bottom_state_variable_id)                      :: id_din
       type (type_bottom_state_variable_id)                      :: id_dip
-      type (type_bottom_state_variable_id)                      :: id_discard_c
-      type (type_bottom_state_variable_id)                      :: id_discard_n
-      type (type_bottom_state_variable_id)                      :: id_discard_p
+      ! WIP: Including discards from fishers
+      !type (type_bottom_state_variable_id)                      :: id_discard_c
+      !type (type_bottom_state_variable_id)                      :: id_discard_n
+      !type (type_bottom_state_variable_id)                      :: id_discard_p
       type (type_bottom_state_variable_id)                      :: id_landings           ! State variable that will serve as sink for all landed biomass
       
+      type (type_state_variable_id)                      :: id_benwaste_c
+      type (type_state_variable_id)                      :: id_benwaste_n
+      type (type_state_variable_id)                      :: id_benwaste_p
+      type (type_state_variable_id)                      :: id_benwaste_s
       type (type_state_variable_id)                      :: id_beno2
       type (type_state_variable_id)                      :: id_bendic
       type (type_state_variable_id)                      :: id_bendip
       type (type_state_variable_id)                      :: id_bendin
-      type (type_state_variable_id)                      :: id_bendiscard_c
-      type (type_state_variable_id)                      :: id_bendiscard_n
-      type (type_state_variable_id)                      :: id_bendiscard_p
-      type (type_state_variable_id)                      :: id_bendiscard_s
+      !type (type_state_variable_id)                      :: id_bendiscard_c
+      !type (type_state_variable_id)                      :: id_bendiscard_n
+      !type (type_state_variable_id)                      :: id_bendiscard_p
       type (type_dependency_id)                          :: id_ETW          
       
       
@@ -472,10 +476,6 @@ contains
    call pelagic_size_spectrum%parameters%set_real('w_min', self%w_min/self%beta**2)
    call pelagic_size_spectrum%parameters%set_real('w_max', self%w_min)
     
-  ! allocate (demersal_size_spectrum)
-  ! call demersal_size_spectrum%parameters%set_integer('nsource', self%nbenprey)
-  ! call demersal_size_spectrum%parameters%set_integer('nsource_start', self%npelprey)
-
    
    allocate (self%id_bprey_c(self%nbenprey ))
    allocate (self%id_bprey_n(self%nbenprey ))
@@ -524,34 +524,13 @@ contains
         call self%get_parameter(self%prey(iprey)%isben,'prey'//trim(strindex)//'isben','','prey '//trim(strindex)//' is benthic',default=.false.)
 
         if (self%prey(iprey)%isben) then
-           !b=self%nprey - self%nclass-self%npelprey
            b=b+1
            write (strindex2,'(i0)') b
-      ! prey is benthic
-        !   call self%register_dependency(self%id_pelprey_c(iprey), 'pelprey_c'//trim(strindex), 'mmol C m-2', 'carbon in demersal prey '//trim(strindex))
-      !     call self%request_coupling_to_model(self%id_pelprey_c(iprey), 'prey'//trim(strindex), standard_variables%total_carbon)    
-          ! call total_pelprey_calculator%add_component('pelprey_c'//trim(strindex)) 
-         !  call self%register_horizontal_dependency(self%id_benprey_c(b), 'benprey_c'//trim(strindex2), 'mmol C m-2', 'carbon in benthic prey '//trim(strindex2)) 
-         !  call self%register_horizontal_dependency(self%id_benprey_n(b), 'benprey_n'//trim(strindex2), 'mmol C m-2', 'carbon in benthic prey '//trim(strindex2)) 
-         !  call self%register_horizontal_dependency(self%id_benprey_p(b), 'benprey_p'//trim(strindex2), 'mmol C m-2', 'carbon in benthic prey '//trim(strindex2)) 
-         !  call self%register_horizontal_dependency(self%id_benprey_s(b), 'benprey_s'//trim(strindex2), 'mmol C m-2', 'carbon in benthic prey '//trim(strindex2)) 
-          ! call self%request_coupling_to_model(self%id_benprey_c(b), 'prey'//trim(strindex), standard_variables%total_carbon)
-        !   call self%request_coupling_to_model(self%id_benprey_n(b), 'prey'//trim(strindex), standard_variables%total_nitrogen)
-        !   call self%request_coupling_to_model(self%id_benprey_p(b), 'prey'//trim(strindex), standard_variables%total_phosphorus)
-        !   call self%request_coupling_to_model(self%id_benprey_s(b), 'prey'//trim(strindex), standard_variables%total_silicate)
-           !call self%request_coupling(self%id_prey_c(iprey), 'benprey'//trim(strindex2)//'_depth_average/c')
-           !call self%request_coupling(self%id_prey_n(iprey), 'benprey'//trim(strindex2)//'_depth_average/n')
-           !call self%request_coupling(self%id_prey_p(iprey), 'benprey'//trim(strindex2)//'_depth_average/p')
-           !call self%request_coupling(self%id_prey_s(iprey), 'benprey'//trim(strindex2)//'_depth_average/s')
            call self%couplings%set_string('ave_prey'//trim(strindex), 'prey'//trim(strindex))
            call self%request_coupling_to_model(self%id_prey_c(iprey), 'prey'//trim(strindex), standard_variables%total_carbon)
            call self%request_coupling_to_model(self%id_prey_n(iprey), 'prey'//trim(strindex), standard_variables%total_nitrogen)
            call self%request_coupling_to_model(self%id_prey_p(iprey), 'prey'//trim(strindex), standard_variables%total_phosphorus)
            call self%request_coupling_to_model(self%id_prey_s(iprey), 'prey'//trim(strindex), standard_variables%total_silicate)
-         
-
-         
-         
          
            call self%get_parameter(w_prey_min, 'w_prey'//trim(strindex)//'_min', 'g', 'minimum mass of prey '//trim(strindex))
            call self%get_parameter(w_prey_max, 'w_prey'//trim(strindex)//'_max', 'g', 'maximum mass of prey '//trim(strindex))   
@@ -559,23 +538,12 @@ contains
           
            call self%set_variable_property(self%id_prey_c(iprey), 'min_particle_mass', w_prey_min)
            call self%set_variable_property(self%id_prey_c(iprey), 'max_particle_mass', w_prey_max) 
- !      call depth_averaged_prey%set_variable_property(depth_averaged_prey%id_c, 'min_particle_mass', w_prey_min)
- !      call depth_averaged_prey%set_variable_property(depth_averaged_prey%id_c, 'max_particle_mass', w_prey_max)          
-      !     call demersal_size_spectrum%parameters%set_real('w_source'//trim(strindex)//'_min', w_prey_min)
-       !    call demersal_size_spectrum%parameters%set_real('w_source'//trim(strindex)//'_max', w_prey_max)
-       !    call demersal_size_spectrum%couplings%set_string('source'//trim(strindex), '../benprey_c'//trim(strindex2))      
 
            call self%register_diagnostic_variable(self%id_bprey_c(b),'bprey'//trim(strindex)//'c','mg C/m^2/d',   'uptake of carbon in food source '//trim(strindex),    source=source_do_bottom)
            call self%register_diagnostic_variable(self%id_bprey_n(b),'bprey'//trim(strindex)//'n','mmol C/m^2/d',   'uptake of nitrogen in food source '//trim(strindex),    source=source_do_bottom)
            call self%register_diagnostic_variable(self%id_bprey_p(b),'bprey'//trim(strindex)//'p','mmol C/m^2/d',   'uptake of phosphorus in food source '//trim(strindex),    source=source_do_bottom)
            call self%register_diagnostic_variable(self%id_bprey_s(b),'bprey'//trim(strindex)//'s','mmol C/m^2/d',   'uptake of silicon in food source '//trim(strindex),    source=source_do_bottom)
             self%pelspec(iprey)=0.0_rk             
-
-
-     !     call self%add_to_aggregate_variable(standard_variables%total_carbon, self%id_bprey_c(b))
-      !    call self%add_to_aggregate_variable(standard_variables%total_nitrogen, self%id_bprey_n(b))
-      !    call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_bprey_p(b))
-      !    call self%add_to_aggregate_variable(standard_variables%total_silicate, self%id_bprey_s(b))
       else
                   ! Prey is pelagic
             call self%register_dependency(self%id_pelprey_c(iprey), 'pelprey_c'//trim(strindex), 'mmol C m-3', 'carbon in pelagic prey '//trim(strindex)) 
@@ -604,7 +572,6 @@ contains
      end if
    end do
    call self%add_child(pelagic_size_spectrum, 'pelagic_size_spectrum', configunit=-1)
-  ! call self%add_child(demersal_size_spectrum, 'demersal_size_spectrum', configunit=-1)
 
    call self%add_child(total_pelprey_calculator,'total_pelprey_calculator',configunit=-1)
 
@@ -624,7 +591,6 @@ contains
    allocate(self%id_c(self%nclass))
    if (self%SRR == 1 .or. self%SRR == 2)  then 
        allocate(self%id_reproduction(self%nclass))
-       !allocate(self%id_reproduction_ben(self%nclass))
    end if
    
    
@@ -658,13 +624,6 @@ contains
       call depth_averaged_class%request_coupling('int_c', '../c'//trim(strindex))
       call depth_averaged_class%set_variable_property(depth_averaged_class%id_c,'particle_mass',self%w(iclass))
       
-!      allocate(depth_averaged_class_demersal)
-!      depth_averaged_class_demersal%qnc = self%qnc
-!      depth_averaged_class_demersal%qpc = self%qpc
-!      call self%add_child(depth_averaged_class_demersal, 'class'//trim(strindex), configunit=-1)
-!      call depth_averaged_class_demersal%request_coupling('int_c', '../c'//trim(strindex))
-!      call depth_averaged_class_demersal%set_variable_property(depth_averaged_class_demersal%id_c,'particle_mass',self%w(iclass))
-
       ! If population is cannibalistic, add this size class as one of the prey (after the user-specified prey set).
       if (cannibalism) then
          write (strindex2,'(i0)') self%nprey - self%nclass + iclass
@@ -690,34 +649,22 @@ contains
    call register_waste('respired_carbon', 'c', id_c=self%id_dic)
    call register_waste('excreted_nitrogen', 'n', id_n=self%id_din)
    call register_waste('excreted_phosphorus', 'p', id_p=self%id_dip)
-
-   call self%register_bottom_state_dependency(self%id_discard_c, 'discard_c', 'mmol C m-2', 'organic carbon discards')
-   call self%register_bottom_state_dependency(self%id_discard_n, 'discard_n', 'mmol N m-2', 'organic nitrogen discards')
-   call self%register_bottom_state_dependency(self%id_discard_p, 'discard_p', 'mmol P m-2', 'organic phosphorus discards')
-   call self%request_coupling_to_model(self%id_discard_c, 'discards', standard_variables%total_carbon)
-   call self%request_coupling_to_model(self%id_discard_n, 'discards', standard_variables%total_nitrogen)
-   call self%request_coupling_to_model(self%id_discard_p, 'discards', standard_variables%total_phosphorus)
-   call self%couplings%set_string('discards', './egested_matter')
    
-   !Add in links so can add the demersal pool
-   call self%register_state_dependency(self%id_Bendip,'dipp','mmol P/m^2','disssolved inorganic phosphorus')
-   call self%register_state_dependency(self%id_Bendin,'dinn','mmol N/m^2','dissolved inorganic nitrogen')
-   call self%register_state_dependency(self%id_Bendic,'O3c','mmol C/m^2','carbon dioxide')
-   call self%register_state_dependency(self%id_Beno2,'O2o','mmol O_2/m^2','oxygen')
-   call self%register_state_dependency(self%id_bendiscard_c, 'bendiscard_c', 'mmol C m-2', 'organic carbon discards')
-   call self%register_state_dependency(self%id_bendiscard_n, 'bendiscard_n', 'mmol N m-2', 'organic nitrogen discards')
-   call self%register_state_dependency(self%id_bendiscard_p, 'bendiscard_p', 'mmol P m-2', 'organic phosphorus discards')
-   call self%register_state_dependency(self%id_bendiscard_s, 'bendiscard_s', 'mmol S m-2', 'silicate discards')
+   call self%register_state_dependency(self%id_bendip,'dipp','mmol P/m^2','disssolved inorganic phosphorus')
+   call self%register_state_dependency(self%id_bendin,'dinn','mmol N/m^2','dissolved inorganic nitrogen')
+   call self%register_state_dependency(self%id_bendic,'O3c','mmol C/m^2','carbon dioxide')
+   call self%register_state_dependency(self%id_beno2,'O2o','mmol O_2/m^2','oxygen')
+   call self%register_state_dependency(self%id_benwaste_c, 'benwaste_c', 'mmol C m-2', 'organic carbon discards')
+   call self%register_state_dependency(self%id_benwaste_n, 'benwaste_n', 'mmol N m-2', 'organic nitrogen discards')
+   call self%register_state_dependency(self%id_benwaste_p, 'benwaste_p', 'mmol P m-2', 'organic phosphorus discards')
    
-   
-   call self%request_coupling_to_model(self%id_Bendip,   'Benthic_excreted_phosphorus',   standard_variables%total_phosphorus)
-   call self%request_coupling_to_model(self%id_Bendin,   'Benthic_excreted_nitrogen',   standard_variables%total_nitrogen)
-   call self%request_coupling_to_model(self%id_Bendic,   'Benthic_respired_carbon',   standard_variables%total_carbon)
-   call self%request_coupling_to_model(self%id_Beno2,   'Benthic_oxygen_consumed', 'o')
-   call self%request_coupling_to_model(self%id_bendiscard_c, 'bendiscards', standard_variables%total_carbon)
-   call self%request_coupling_to_model(self%id_bendiscard_n, 'bendiscards', standard_variables%total_nitrogen)
-   call self%request_coupling_to_model(self%id_bendiscard_p, 'bendiscards', standard_variables%total_phosphorus)
-   call self%request_coupling_to_model(self%id_bendiscard_s, 'bendiscards', standard_variables%total_silicate)
+   call self%request_coupling_to_model(self%id_bendip,   'ben_excreted_phosphorus',   standard_variables%total_phosphorus)
+   call self%request_coupling_to_model(self%id_bendin,   'ben_excreted_nitrogen',   standard_variables%total_nitrogen)
+   call self%request_coupling_to_model(self%id_bendic,   'ben_respired_carbon',   standard_variables%total_carbon)
+   call self%request_coupling_to_model(self%id_beno2,   'ben_oxygen_consumed', 'o')
+   call self%request_coupling_to_model(self%id_benwaste_c, 'ben_egested_matter', standard_variables%total_carbon)
+   call self%request_coupling_to_model(self%id_benwaste_n, 'ben_egested_matter', standard_variables%total_nitrogen)
+   call self%request_coupling_to_model(self%id_benwaste_p, 'ben_egested_matter', standard_variables%total_phosphorus)
    
    call self%register_diagnostic_variable(self%id_fish_benDIP,'fish_benDIP','mmol m-2 d-1','benthic fish excretion to DIP',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_fish_benDIN,'fish_benDIN','mmol m-2 d-1','benthic fish excretion to DIN',source=source_do_bottom)
@@ -731,7 +678,15 @@ contains
    call self%register_diagnostic_variable(self%id_total_ben_prey,'total_ben_prey','mmol m-2','integral of benthic prey',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_w_int_diag,'w_int_diag','mmol m-2 ','depth integral of pelagic prey',source=source_do_bottom)
 
-
+   ! WIP: Including discards from fishers
+   !call self%register_bottom_state_dependency(self%id_discard_c, 'discard_c', 'mmol C m-2', 'organic carbon discards')
+   !call self%register_bottom_state_dependency(self%id_discard_n, 'discard_n', 'mmol N m-2', 'organic nitrogen discards')
+   !call self%register_bottom_state_dependency(self%id_discard_p, 'discard_p', 'mmol P m-2', 'organic phosphorus discards')
+   !call self%request_coupling_to_model(self%id_discard_c, 'discards', standard_variables%total_carbon)
+   !call self%request_coupling_to_model(self%id_discard_n, 'discards', standard_variables%total_nitrogen)
+   !call self%request_coupling_to_model(self%id_discard_p, 'discards', standard_variables%total_phosphorus)
+   !call self%couplings%set_string('discards', './egested_matter')
+   
    call self%register_state_variable(self%id_landings, 'landings', 'g m-2', 'landed biomass')
    call self%add_to_aggregate_variable(standard_variables%total_carbon, self%id_landings, scale_factor=1.0_rk/g_per_mmol_carbon)
    call self%add_to_aggregate_variable(standard_variables%total_nitrogen, self%id_landings, scale_factor=self%qnc/g_per_mmol_carbon)
@@ -749,14 +704,9 @@ contains
       call self%register_dependency(self%id_slope, 'prey_spectrum_slope', '-', 'slope of pelagic prey spectrum')
       call self%request_coupling(self%id_offset, './pelagic_size_spectrum/offset')
       call self%request_coupling(self%id_slope, './pelagic_size_spectrum/slope')
-     ! call self%register_dependency(self%id_benoffset, 'benthic_prey_spectrum_offset', '-', 'offset of benthic prey spectrum')
-     ! call self%register_dependency(self%id_benslope, 'benthic_prey_spectrum_slope', '-', 'slope of benthic prey spectrum')
-     ! call self%request_coupling(self%id_benoffset, './demersal_size_spectrum/benoffset')
-     ! call self%request_coupling(self%id_benslope, './demersal_size_spectrum/benslope')
       
    end if
    call self%register_diagnostic_variable(self%id_R,'R','# m-2 d-1','recruitment',source=source_do_bottom)
-  ! call self%register_diagnostic_variable(self%id_R_ben,'R_ben','# m-2 d-1','recruitment',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_tot, 'c_tot', 'g m-2', 'total biomass', source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_size1, 'c_size1', 'g m-2', 'fish biomass smaller than threshold1', source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_size2, 'c_size2', 'g m-2', 'fish biomass smaller than threshold2', source=source_do_bottom)
@@ -971,9 +921,6 @@ contains
               end if
                _SET_HORIZONTAL_DIAGNOSTIC_(self%id_omega_diag(iclass), omega(iclass))
           end do
-         ! omega(1)=1._rk   ! Ensure that recruitment only goes into pelagic 
-       !   PRINT*, omega
-       !   _SET_HORIZONTAL_DIAGNOSTIC_(self%id_omega_dia, omega)
           
          ! Food uptake (all size classes, all prey types)
          ! This computes total ingestion per size class (over all prey), and total loss per prey type (over all size classes)
@@ -1113,36 +1060,25 @@ contains
          elseif (self%SRR==1) then
             ! Density-independent recruitment
             R = R_p
-          !  R_ben = R_p_ben
          elseif (self%SRR==2) then
             ! Beverton-Holt recruitment
             R = self%R_max*R_p/(R_p + self%R_max)
-            !R_ben = self%R_max*R_p_ben/(R_p_ben + self%R_max)
          else
             _GET_HORIZONTAL_(self%id_offset, offset)
             _GET_HORIZONTAL_(self%id_slope, slope)
-          !  _GET_HORIZONTAL_(self%id_benoffset, benoffset)
-          !  _GET_HORIZONTAL_(self%id_benslope, benslope)
             endpoint = offset + slope * log(self%w_min)
 
             expected_eggs= exp(endpoint) * self%delta_w(1)
-          !  expected_eggs_ben= exp(endpoint_ben) * self%delta_w(1)
             R = max(expected_eggs - Nw(1), 0._rk)/(self%w_min/g_per_mmol_carbon) * self%R_relax
-            
-            !HP:need to think about whether want to use first size class for benthic fish
 
          end if
 
          ! Use recruitment as number of incoming individuals for the first size class.
          nflux_pel(0) = R
-      !   nflux_ben(0) = R
 
          ! Destroy all prey constituents that we are aware of (we only need to destroy carbon
          ! to get the correct impact on prey, but by destroying all we enable conservation checks)
          b=0._rk
-         
-        
-                  
          
          do iprey = 1, self%nprey
             if (iprey > self%nprey - self%nclass) then
@@ -1192,18 +1128,14 @@ contains
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g_ben(iclass),g_ben(iclass)*86400)
             if (self%SRR == 1 .or. self%SRR == 2) then
                _SET_HORIZONTAL_DIAGNOSTIC_(self%id_reproduction(iclass),reproduction(iclass)*86400)
-               !_SET_HORIZONTAL_DIAGNOSTIC_(self%id_reproduction_ben(iclass),reproduction_ben(iclass)*86400)
             end if
          end do
 
          if (self%SRR == 1 .or. self%SRR == 2) then
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_total_reproduction,total_reproduction*86400)
-            !_SET_HORIZONTAL_DIAGNOSTIC_(self%id_total_reproduction_ben,total_reproduction_ben*86400)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R_p,R_p*86400)
-           ! _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R_p_ben,R_p_ben*86400)
          end if
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R,R*86400)
-        ! _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R_ben,R_ben*86400)
 
          ! Compute waste fluxes: total ingestion plus mortality, minus mass used in growth, minus recruitment, plus growth over right edge of resolved size range.
          if (self%feedback) then
@@ -1221,20 +1153,22 @@ contains
             _SET_BOTTOM_EXCHANGE_(self%id_bendic,sum(((1-self%alpha-self%alpha_eg)*I_c_ben+maintenance_ben)*Nw*(1-omega)))
             _SET_BOTTOM_EXCHANGE_(self%id_bendin,(1-self%alpha-self%alpha_eg)*sum(I_n_ben*Nw*(1._rk-omega)))
             _SET_BOTTOM_EXCHANGE_(self%id_bendip,(1-self%alpha-self%alpha_eg)*sum(I_p_ben*Nw*(1._rk-omega)))
-            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_c, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben -
+            _SET_BOTTOM_EXCHANGE_(self%id_benwaste_c, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben -
             g_ben/(1-self%psi) - maintenance_ben)*Nw*(1._rk-omega))          + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon))
             
-            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_n,(sum(((self%alpha+self%alpha_eg)*I_n_ben + (mu_ben - g_ben/(1-self%psi))*self%qnc)*Nw*(1._rk-omega)) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qnc))
+            _SET_BOTTOM_EXCHANGE_(self%id_benwaste_n,(sum(((self%alpha+self%alpha_eg)*I_n_ben + (mu_ben - g_ben/(1-self%psi))*self%qnc)*Nw*(1._rk-omega)) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qnc))
             
-            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_p,(sum(((self%alpha+self%alpha_eg)*I_p_ben + (mu_ben - g_ben/(1-self%psi))*self%qpc)*Nw*(1._rk-omega))  + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qpc))
+            _SET_BOTTOM_EXCHANGE_(self%id_benwaste_p,(sum(((self%alpha+self%alpha_eg)*I_p_ben + (mu_ben - g_ben/(1-self%psi))*self%qpc)*Nw*(1._rk-omega))  + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qpc))
             
-            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_s,sum(I_s_ben*Nw*(1._rk-omega)))
+            _SET_BOTTOM_EXCHANGE_(self%id_benwaste_s,sum(I_s_ben*Nw*(1._rk-omega)))
             
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIP,  (1-self%alpha-self%alpha_eg)*sum(I_p_ben*Nw*(1._rk-omega)*86400))
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_benO2_fish,  -self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw*(1._rk-omega))*86400) 
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIC,  (1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw*(1._rk-omega))*86400)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_benO2_fish,
+            -self%resp_o2C*sum(((1-self%alpha-self%alpha_eg)*I_c_ben+maintenance_ben)*Nw*(1._rk-omega))*86400) 
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIC,  sum(((1-self%alpha-self%alpha_eg)*I_c_ben+maintenance_ben)*Nw*(1._rk-omega))*86400)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benDIN, (1-self%alpha-self%alpha_eg)*sum(I_n_ben*Nw*(1._rk-omega))*86400)
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOC, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben - g_ben/(1-self%psi)          )*Nw*(1._rk-omega))          + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon)*86400*CMass)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOC, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben - g_ben/(1-self%psi)
+            - maintenance_ben)*Nw*(1._rk-omega))          + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon)*86400*CMass)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPON, (sum(((self%alpha+self%alpha_eg)*I_n_ben + (mu_ben - g_ben/(1-self%psi))*self%qnc)*Nw*(1._rk-omega)) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qnc)*86400)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOP,(sum(((self%alpha+self%alpha_eg)*I_p_ben + (mu_ben - g_ben/(1-self%psi))*self%qpc)*Nw*(1._rk-omega))  + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qpc)*86400)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_fish_benPOS,sum(I_s_ben*Nw*(1._rk-omega)))
