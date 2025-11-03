@@ -605,7 +605,6 @@ contains
       integer :: iclass,iprey,istate
       real(rk) :: c_lfi, c_size1,c_size2, c_size3, slope, offset, endpoint, expected_eggs
       real(rk) :: E_e,E_a_c,E_a_n,E_a_p,E_a_s,f,total_reproduction,T_lim,temp,T_w_int,w_int,g_tot,R,R_p,nflux(0:self%nclass),prey_state,g_tot_c,g_tot_n,g_tot_p
-      real(rk),dimension(self%nclass) :: excess_c,excess_n,excess_p
       real(rk),dimension(self%nprey)  :: prey_c,prey_n,prey_p,prey_s,prey_loss
       real(rk),dimension(self%nclass) :: Nw,I_c,I_n,I_p,I_s,maintenance,g,mu,reproduction
       real(rk), parameter :: delta_t = 900
@@ -710,17 +709,9 @@ contains
 
             ! Avoid shrinking: limit maintenance to maximum sustainable value and increase starvation mortality.
             maintenance(iclass) = min(maintenance(iclass),self%alpha*I_c(iclass))
-            ! this takes from each pool - not just carbon
-            ! can shrinkage cause a flux to go into lower size class?
-            ! DO WE MEAN TO BE USING xi!!!!!
-            mu(iclass) = mu(iclass) + max(0.0_rk,-g_tot) !/self%w(iclass)) !/self%xi) 
-            
-            excess_c(iclass) = 0.0_rk ! (g_tot_c - g_tot) !/self%w(iclass) !/self%xi
+            mu(iclass) = mu(iclass) + max(0.0_rk,-g_tot/self%xi) 
             g_tot = max(0.0_rk,g_tot)
            
-            excess_n(iclass) = 0.0_rk !(g_tot_n/self%qnc - g_tot)!/self%w(iclass)!/self%xi
-            excess_p(iclass) = 0.0_rk !(g_tot_p/self%qpc - g_tot)!/self%w(iclass)!/self%xi
-
             ! Individual growth (s-1)
             g(iclass) = (1-self%psi(iclass))*g_tot ! Eq M7
 
@@ -776,7 +767,6 @@ contains
          ! Transfer size-class-specific source terms and diagnostics to FABM
          do iclass=1,self%nclass
             ! Apply specific mortality (s-1) to size-class-specific abundances and apply upwind advection - this is a time-explicit version of Eq G.1 of Hartvig et al.
-            ! Check that mu + F aren't greater than one for a given time step !
             _SET_BOTTOM_ODE_(self%id_c(iclass),-(mu(iclass) + self%F(iclass))*Nw(iclass) + (nflux(iclass-1)-nflux(iclass))*self%w(iclass)/g_per_mmol_carbon)
 
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g(iclass),g(iclass)*86400)
@@ -797,9 +787,9 @@ contains
             _SET_BOTTOM_ODE_(self%id_dic,sum(((1-self%alpha-self%alpha_eg)*I_c+maintenance)*Nw))
             _SET_BOTTOM_ODE_(self%id_din,(1-self%alpha-self%alpha_eg)*sum(I_n*Nw))
             _SET_BOTTOM_ODE_(self%id_dip,(1-self%alpha-self%alpha_eg)*sum(I_p*Nw))
-            _SET_BOTTOM_ODE_(self%id_waste_c,sum(((self%alpha+self%alpha_eg)*I_c +  mu - g/(1-self%psi) - maintenance +excess_c)*Nw) - R*self%w_min/g_per_mmol_carbon          + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)
-            _SET_BOTTOM_ODE_(self%id_waste_n,sum(((self%alpha+self%alpha_eg)*I_n + (mu - g/(1-self%psi)+excess_n)*self%qnc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qnc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)
-            _SET_BOTTOM_ODE_(self%id_waste_p,sum(((self%alpha+self%alpha_eg)*I_p + (mu - g/(1-self%psi)+excess_p)*self%qpc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qpc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)
+            _SET_BOTTOM_ODE_(self%id_waste_c,sum(((self%alpha+self%alpha_eg)*I_c +  mu - g/(1-self%psi) - maintenance)*Nw) - R*self%w_min/g_per_mmol_carbon          + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)
+            _SET_BOTTOM_ODE_(self%id_waste_n,sum(((self%alpha+self%alpha_eg)*I_n + (mu - g/(1-self%psi))*self%qnc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qnc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)
+            _SET_BOTTOM_ODE_(self%id_waste_p,sum(((self%alpha+self%alpha_eg)*I_p + (mu - g/(1-self%psi))*self%qpc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qpc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)
             _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s*Nw))
          end if
          _SET_BOTTOM_ODE_(self%id_landings,sum(self%F*Nw*g_per_mmol_carbon))
