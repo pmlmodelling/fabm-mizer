@@ -1080,8 +1080,8 @@ contains
             ! Avoid shrinking: limit maintenance to maximum sustainable value and increase starvation mortality.
             maintenance_pel(iclass) = min(maintenance_pel(iclass),self%alpha*I_c_pel(iclass))
             maintenance_ben(iclass) = min(maintenance_ben(iclass),self%alpha*I_c_ben(iclass))
-            mu_pel(iclass) = mu_pel(iclass) + max(0.0_rk,-g_tot_pel/self%w(iclass)/self%xi)
-            mu_ben(iclass) = mu_ben(iclass) + max(0.0_rk,-g_tot_ben/self%w(iclass)/self%xi)
+            mu_pel(iclass) = mu_pel(iclass) + max(0.0_rk,-g_tot_pel/self%xi)
+            mu_ben(iclass) = mu_ben(iclass) + max(0.0_rk,-g_tot_ben/self%xi)
             g_tot_pel = max(0.0_rk,g_tot_pel)
             g_tot_ben = max(0.0_rk,g_tot_ben)
 
@@ -1092,10 +1092,6 @@ contains
             ! Mass flux towards reproduction (mmol C m-2 s-1) - sum over all individuals in this size class
             reproduction(iclass) = (omega(iclass)*self%psi(iclass)*g_tot_pel*Nw(iclass)) + (1._rk-omega(iclass))*self%psi(iclass)*g_tot_ben*Nw(iclass)
          end do
-
-
-
-
 
          ! Compute number of individuals moving from each size class to the next (units: # s-1)
          nflux_pel(1:self%nclass) = Nw*g_pel/(self%delta_w/g_per_mmol_carbon)
@@ -1145,8 +1141,7 @@ contains
          ! to get the correct impact on prey, but by destroying all we enable conservation checks)
          b=0._rk
          
-
-         
+        
                   
          
          do iprey = 1, self%nprey
@@ -1212,20 +1207,22 @@ contains
 
          ! Compute waste fluxes: total ingestion plus mortality, minus mass used in growth, minus recruitment, plus growth over right edge of resolved size range.
          if (self%feedback) then
-            _SET_BOTTOM_ODE_(self%id_o2,-self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c_pel*Nw*omega))            
-            _SET_BOTTOM_ODE_(self%id_dic,(1-self%alpha-self%alpha_eg)*sum(I_c_pel*Nw*omega))
+            _SET_BOTTOM_ODE_(self%id_o2,-self%resp_o2C*sum(((1-self%alpha-self%alpha_eg)*I_c_pel+maintenance_pel)*Nw*omega))
+            _SET_BOTTOM_ODE_(self%id_dic,sum(((1-self%alpha-self%alpha_eg)*I_c_pel+maintenance_pel)*Nw*omega))
             _SET_BOTTOM_ODE_(self%id_din,(1-self%alpha-self%alpha_eg)*sum(I_n_pel*Nw*omega))
             _SET_BOTTOM_ODE_(self%id_dip,(1-self%alpha-self%alpha_eg)*sum(I_p_pel*Nw*omega))
-            _SET_BOTTOM_ODE_(self%id_waste_c,(sum(((self%alpha+self%alpha_eg)*I_c_pel +  mu_pel - g_pel/(1-self%psi)          )*Nw*omega) - R*self%w_min/g_per_mmol_carbon*omega(1)          + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*omega(self%nclass)/g_per_mmol_carbon))
+            _SET_BOTTOM_ODE_(self%id_waste_c,(sum(((self%alpha+self%alpha_eg)*I_c_pel +  mu_pel - g_pel/(1-self%psi) -
+            maintenance_pel)*Nw*omega) - R*self%w_min/g_per_mmol_carbon*omega(1)          + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*omega(self%nclass)/g_per_mmol_carbon))
             _SET_BOTTOM_ODE_(self%id_waste_n,(sum(((self%alpha+self%alpha_eg)*I_n_pel + (mu_pel - g_pel/(1-self%psi))*self%qnc)*Nw*omega) - R*self%w_min/g_per_mmol_carbon*self%qnc*omega(1) + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*omega(self%nclass)/g_per_mmol_carbon*self%qnc))
             _SET_BOTTOM_ODE_(self%id_waste_p,(sum(((self%alpha+self%alpha_eg)*I_p_pel + (mu_pel - g_pel/(1-self%psi))*self%qpc)*Nw*omega) - R*self%w_min/g_per_mmol_carbon*self%qpc*omega(1) + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*omega(self%nclass)/g_per_mmol_carbon*self%qpc))
             _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s_pel*Nw*omega))
             
-            _SET_BOTTOM_EXCHANGE_(self%id_beno2,-self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw*(1._rk-omega)))            
-            _SET_BOTTOM_EXCHANGE_(self%id_bendic,(1-self%alpha-self%alpha_eg)*sum(I_c_ben*Nw*(1._rk-omega)))
+            _SET_BOTTOM_EXCHANGE_(self%id_beno2,-self%resp_o2C*sum(((1-self%alpha-self%alpha_eg)*I_c_ben+maintenance_ben)*Nw*(1-omega)))
+            _SET_BOTTOM_EXCHANGE_(self%id_bendic,sum(((1-self%alpha-self%alpha_eg)*I_c_ben+maintenance_ben)*Nw*(1-omega)))
             _SET_BOTTOM_EXCHANGE_(self%id_bendin,(1-self%alpha-self%alpha_eg)*sum(I_n_ben*Nw*(1._rk-omega)))
             _SET_BOTTOM_EXCHANGE_(self%id_bendip,(1-self%alpha-self%alpha_eg)*sum(I_p_ben*Nw*(1._rk-omega)))
-            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_c, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben - g_ben/(1-self%psi)          )*Nw*(1._rk-omega))          + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon))
+            _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_c, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben -
+            g_ben/(1-self%psi) - maintenance_ben)*Nw*(1._rk-omega))          + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon))
             
             _SET_BOTTOM_EXCHANGE_(self%id_bendiscard_n,(sum(((self%alpha+self%alpha_eg)*I_n_ben + (mu_ben - g_ben/(1-self%psi))*self%qnc)*Nw*(1._rk-omega)) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qnc))
             
