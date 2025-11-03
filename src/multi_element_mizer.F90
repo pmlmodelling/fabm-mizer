@@ -186,6 +186,8 @@ contains
    call self%get_parameter(self%nprey, 'nprey',  '',     'number of prey')
    call self%get_parameter(self%alpha, 'alpha',  '-',    'assimilation efficiency',            default=0.6_rk,   minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(self%alpha_eg, 'alpha_eg',  '-',    'fraction of food egested', default=1-self%alpha,   minimum=0.0_rk, maximum=1.0_rk)
+   if ((self%alpha + self%alpha_eg) > 1.0_rk) &
+      call self%fatal_error('initialize','Total efficiency is greater than one')
    call self%get_parameter(self%erepro,'erepro', '-',    'reproductive efficiency',            default=1.0_rk,   minimum=0.0_rk, maximum=1.0_rk)
    call self%get_parameter(self%w_min, 'w_min',  'g',    'egg mass',                           default=0.001_rk, minimum=0.0_rk)
    call self%get_parameter(n,          'n',      '-',    'exponent of max. consumption',       default=2.0_rk/3.0_rk)
@@ -709,9 +711,10 @@ contains
 
             ! Avoid shrinking: limit maintenance to maximum sustainable value and increase starvation mortality.
             maintenance(iclass) = min(maintenance(iclass),self%alpha*I_c(iclass))
-            mu(iclass) = mu(iclass) + max(0.0_rk,-g_tot/self%w(iclass)/self%xi)
+            ! Hartvig 2011 eq. 13, assumes a lipid reserve proportional to body size.
+            mu(iclass) = mu(iclass) + max(0.0_rk,-g_tot/self%xi) 
             g_tot = max(0.0_rk,g_tot)
-
+           
             ! Individual growth (s-1)
             g(iclass) = (1-self%psi(iclass))*g_tot ! Eq M7
 
@@ -783,11 +786,11 @@ contains
 
          ! Compute waste fluxes: total ingestion plus mortality, minus mass used in growth, minus recruitment, plus growth over right edge of resolved size range.
          if (self%feedback) then
-            _SET_BOTTOM_ODE_(self%id_o2,-self%resp_o2C*(1-self%alpha-self%alpha_eg)*sum(I_c*Nw))
-            _SET_BOTTOM_ODE_(self%id_dic,(1-self%alpha-self%alpha_eg)*sum(I_c*Nw))
+            _SET_BOTTOM_ODE_(self%id_o2,-self%resp_o2C*sum(((1-self%alpha-self%alpha_eg)*I_c+maintenance)*Nw))
+            _SET_BOTTOM_ODE_(self%id_dic,sum(((1-self%alpha-self%alpha_eg)*I_c+maintenance)*Nw))
             _SET_BOTTOM_ODE_(self%id_din,(1-self%alpha-self%alpha_eg)*sum(I_n*Nw))
             _SET_BOTTOM_ODE_(self%id_dip,(1-self%alpha-self%alpha_eg)*sum(I_p*Nw))
-            _SET_BOTTOM_ODE_(self%id_waste_c,sum(((self%alpha+self%alpha_eg)*I_c +  mu - g/(1-self%psi)          )*Nw) - R*self%w_min/g_per_mmol_carbon          + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)
+            _SET_BOTTOM_ODE_(self%id_waste_c,sum(((self%alpha+self%alpha_eg)*I_c +  mu - g/(1-self%psi) - maintenance)*Nw) - R*self%w_min/g_per_mmol_carbon          + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon)
             _SET_BOTTOM_ODE_(self%id_waste_n,sum(((self%alpha+self%alpha_eg)*I_n + (mu - g/(1-self%psi))*self%qnc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qnc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qnc)
             _SET_BOTTOM_ODE_(self%id_waste_p,sum(((self%alpha+self%alpha_eg)*I_p + (mu - g/(1-self%psi))*self%qpc)*Nw) - R*self%w_min/g_per_mmol_carbon*self%qpc + nflux(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))/g_per_mmol_carbon*self%qpc)
             _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s*Nw))
