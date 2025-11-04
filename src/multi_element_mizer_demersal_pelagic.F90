@@ -41,7 +41,6 @@ module mizer_multi_element_demersal_pelagic_population
       type (type_horizontal_dependency_id)          :: id_c,id_n,id_p,id_s
       type (type_horizontal_dependency_id)          :: id_c_an
       type (type_dependency_id)                     :: id_c_pel,id_n_pel,id_p_pel,id_s_pel
-    !  type (type_horizontal_diagnostic_variable_id) :: id_fc,id_fn,id_fp,id_fs
 
       ! To achieve compatibility with legacy ERSEM, we need to be able to decouple the variable
       ! from which food availability is derived from the variable that absorbs the loss due to
@@ -105,11 +104,6 @@ module mizer_multi_element_demersal_pelagic_population
       type (type_horizontal_dependency_id),                    allocatable :: id_benprey_n(:)
       type (type_horizontal_dependency_id),                    allocatable :: id_benprey_p(:)
       type (type_horizontal_dependency_id),                    allocatable :: id_benprey_s(:)
-               
-    !  type (type_horizontal_diagnostic_variable_id)             :: id_total_reproduction_ben ! Total reproduction
-     ! type (type_horizontal_diagnostic_variable_id)             :: id_R_p_ben                ! Density-independent recruitment
-     ! type (type_horizontal_diagnostic_variable_id)             :: id_R_ben                 ! Density-dependent recruitment
-     ! type (type_horizontal_diagnostic_variable_id),allocatable :: id_reproduction_ben(:)    ! Reproduction per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_f_ben(:)               ! Functional response per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_g_ben(:)               ! Specific growth rate per size class
 
@@ -247,7 +241,6 @@ contains
    class (type_depth_integral),       pointer :: depth_integral
    class (type_product),              pointer :: product
    class (type_pelagic_size_spectrum),pointer :: pelagic_size_spectrum
-   !class (type_demersal_size_spectrum),pointer :: demersal_size_spectrum
    logical, parameter :: report_statistics = .false.
 !EOP
 !-----------------------------------------------------------------------
@@ -1056,7 +1049,6 @@ contains
          if (self%SRR==0) then
             ! Constant recruitment
             R = self%recruitment
-           ! R_ben = self%recruitment_ben
          elseif (self%SRR==1) then
             ! Density-independent recruitment
             R = R_p
