@@ -100,10 +100,6 @@ module mizer_multi_element_demersal_pelagic_population
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_f_pel(:)               ! Functional response per size class    
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_g_pel(:)               ! Specific growth rate per size class
       type (type_dependency_id),                    allocatable :: id_pelprey_c(:)
-      type (type_horizontal_dependency_id),                    allocatable :: id_benprey_c(:)
-      type (type_horizontal_dependency_id),                    allocatable :: id_benprey_n(:)
-      type (type_horizontal_dependency_id),                    allocatable :: id_benprey_p(:)
-      type (type_horizontal_dependency_id),                    allocatable :: id_benprey_s(:)
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_f_ben(:)               ! Functional response per size class
       type (type_horizontal_diagnostic_variable_id),allocatable :: id_g_ben(:)               ! Specific growth rate per size class
 
@@ -486,10 +482,6 @@ contains
    allocate(self%id_prey_p(self%nprey))
    allocate(self%id_prey_s(self%nprey))
    allocate(self%id_pelprey_c(self%npelprey))
-   allocate (self%id_benprey_c(self%nbenprey))
-   allocate (self%id_benprey_n(self%nbenprey))
-   allocate (self%id_benprey_p(self%nbenprey))
-   allocate (self%id_benprey_s(self%nbenprey))
    allocate(total_pelprey_calculator)
 
    allocate (self%pelspec(self%nprey))
