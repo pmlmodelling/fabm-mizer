@@ -177,6 +177,7 @@ module mizer_multi_element_demersal_pelagic_population
       real(rk), allocatable :: phi(:,:)        ! prey preference
       real(rk), allocatable :: pelspec(:)        ! prey available to pelagic fish
       real(rk), allocatable :: benspec(:)        ! prey available to benthic fish
+      real(rk), allocatable :: suprey(:)       ! Amount of benthic prey which is accessible to fish
 
             
 
@@ -228,6 +229,7 @@ contains
    real(rk)           :: w_prey_min, w_prey_max
    real(rk)           :: c_ini
    character(len=10)  :: strindex, strindex2
+   character(len=16) :: index
    real(rk),parameter :: pi = 4*atan(1.0_rk)
    real(rk),parameter :: sec_per_year = 86400*365.2425_rk
    class (type_weighted_sum), pointer :: total_pelprey_calculator
@@ -484,8 +486,10 @@ contains
    allocate(self%id_pelprey_c(self%npelprey))
    allocate(total_pelprey_calculator)
 
+   allocate (self%suprey(self%nprey))
    allocate (self%pelspec(self%nprey))
    allocate (self%benspec(self%nprey))
+   
    
    b=0._rk
    do iprey=1,self%nprey
@@ -529,6 +533,8 @@ contains
            call self%register_diagnostic_variable(self%id_bprey_p(b),'bprey'//trim(strindex)//'p','mmol C/m^2/d',   'uptake of phosphorus in food source '//trim(strindex),    source=source_do_bottom)
            call self%register_diagnostic_variable(self%id_bprey_s(b),'bprey'//trim(strindex)//'s','mmol C/m^2/d',   'uptake of silicon in food source '//trim(strindex),    source=source_do_bottom)
             self%pelspec(iprey)=0.0_rk             
+            write (index,'(i0)') iprey 
+            call self%get_parameter(self%suprey(iprey),'suprey'//trim(index),'-','relative affinity for prey type'//trim(index)) !,default = 1.0_rk)
       else
                   ! Prey is pelagic
             call self%register_dependency(self%id_pelprey_c(iprey), 'pelprey_c'//trim(strindex), 'mmol C m-3', 'carbon in pelagic prey '//trim(strindex)) 
@@ -815,6 +821,7 @@ contains
       real(rk),dimension(self%nclass) :: Nw,I_c_pel, I_c_ben,I_n_pel,I_p_pel,I_s_pel,I_n_ben,I_p_ben,I_s_ben, omega
       real(rk),dimension(self%nclass) :: mu_pel,reproduction,maintenance_pel,g_pel,maintenance_ben,g_ben,mu_ben,Fi
       real(rk), parameter :: delta_t = 900, sec_per_year = 86400*365.2425_rk
+      real(rk)           :: accessible
 
 
       _HORIZONTAL_LOOP_BEGIN_
@@ -839,10 +846,17 @@ contains
 
          ! Retrieve prey abundances
          do iprey=1,self%nprey
+            accessible = 1.0_rk
+            if (self%prey(iprey)%isben) then
+               accessible = self%suprey(iprey)
+            end if
             _GET_HORIZONTAL_(self%id_prey_c(iprey), prey_c(iprey))
             _GET_HORIZONTAL_(self%id_prey_n(iprey), prey_n(iprey))
             _GET_HORIZONTAL_(self%id_prey_p(iprey), prey_p(iprey))
             _GET_HORIZONTAL_(self%id_prey_s(iprey), prey_s(iprey))
+            prey_c(iprey) = accessible*prey_c(iprey)
+            prey_n(iprey) = accessible*prey_n(iprey)
+            prey_p(iprey) = accessible*prey_p(iprey)
          end do
          
 
