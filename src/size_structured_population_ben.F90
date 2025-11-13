@@ -112,7 +112,7 @@ contains
    real(rk)           :: z0pre,z0exp,w_s,z_s,z_spre
    real(rk)           :: kappa,lambda
    real(rk)           :: T_ref
-   real(rk)           :: S1,S2,F,F_a,F_b, !w_minF
+   real(rk)           :: S1,S2,F,F_a,F_b !w_minF
    integer            :: z0_type
    integer            :: fishing_type
    character(len=10)  :: strindex
@@ -224,7 +224,7 @@ contains
    ! Fishing mortality
    self%F = 0.0_rk
    call self%get_parameter(fishing_type,'fishing_type', '', 'fishing regime (0: none, 1: constant/knife-edge, 2: logistic)',default=0, minimum=0, maximum=3)
-   if (fishing_type > 0) call self%get_parameter(w_minF, 'w_minF', 'g', 'minimum mass for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
+   if (fishing_type > 0) call self%get_parameter(self%w_minF, 'w_minF', 'g', 'minimum mass for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
    select case (fishing_type)
    case (1)
       ! constant
@@ -406,7 +406,7 @@ contains
       real(rk) :: T_lim_bot, bot_temp
       real(rk),dimension(self%nprey)  :: Nw_prey,prey_loss_pel, prey_loss_ben, pelspec, benspec
       real(rk),dimension(self%nclass) :: Nw,I_pel,I_ben, maintenance_pel, maintenance_ben,g_pel, g_ben,mu_pel, mu_ben,reproduction_pel, reproduction_ben, omega, Fi
-      real(rk), parameter :: delta_t = 12._rk/86400, parameter :: delta_t = 900, sec_per_year = 86400*365.2425_rk
+      real(rk), parameter :: delta_t = 12._rk/86400,  sec_per_year = 86400*365.2425_rk
 
 
       _HORIZONTAL_LOOP_BEGIN_
