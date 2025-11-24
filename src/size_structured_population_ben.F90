@@ -38,7 +38,7 @@ module mizer_size_structured_population_ben
       type (type_dependency_id)                                 :: id_omega                 ! 
       type (type_dependency_id),allocatable                     :: id_pelspec(:), id_benspec(:)
       type (type_dependency_id)                                 :: id_T, id_T_b                  ! Temperature, bottom_temperature
-     
+      type (type_horizontal_dependency_id)                      :: id_fishing_pressure
 
       ! Number of size classes and prey
       integer :: nprey
@@ -54,6 +54,8 @@ module mizer_size_structured_population_ben
       real(rk) :: recruitment ! constant recruitment flux (SSR=0)
       real(rk) :: R_max       ! maximum recruitment flux (SSR=2)
       real(rk) :: omega_threshold
+      logical :: spatial_fishing
+      real(rk) :: w_minF
 
       integer  :: T_dependence ! Type of temperature dependence (0: none, 1: Arrhenius)
       real(rk) :: c1           ! Reference constant in Arrhenius equation = E_a/k/(T_ref+Kelvin)
@@ -110,7 +112,7 @@ contains
    real(rk)           :: z0pre,z0exp,w_s,z_s,z_spre
    real(rk)           :: kappa,lambda
    real(rk)           :: T_ref
-   real(rk)           :: S1,S2,F,w_minF,F_a,F_b
+   real(rk)           :: S1,S2,F,F_a,F_b !w_minF
    integer            :: z0_type
    integer            :: fishing_type
    character(len=10)  :: strindex
@@ -222,28 +224,35 @@ contains
    ! Fishing mortality
    self%F = 0.0_rk
    call self%get_parameter(fishing_type,'fishing_type', '', 'fishing regime (0: none, 1: constant/knife-edge, 2: logistic)',default=0, minimum=0, maximum=3)
-   if (fishing_type > 0) call self%get_parameter(w_minF, 'w_minF', 'g', 'minimum mass for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
+   if (fishing_type > 0) call self%get_parameter(self%w_minF, 'w_minF', 'g', 'minimum mass for fishing selectivity', default=0.0_rk, minimum=0.0_rk)
    select case (fishing_type)
    case (1)
       ! constant
-      call self%get_parameter(F, 'F', 'yr-1', 'fishing effort', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
-      do iclass=1,self%nclass
-         if (self%w(iclass) > w_minF) self%F(iclass) = F
-      end do
+      if (self%spatial_fishing) then
+          call self%register_dependency(self%id_fishing_pressure, 'fishing_pressure', 'yr-1', 'fishing_pressure') 
+       !   call self%register_dependency(self%id_w_int, 'w_int', '', 'depth-integrated weight')
+      else
+          call self%get_parameter(F, 'F', 'yr-1', 'fishing effort', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
+          do iclass=1,self%nclass
+             if (self%w(iclass) > self%w_minF) self%F(iclass) = F
+          end do
+      end if
+      
+
    case (2)
       ! mizer fishing mortality [s-1]; Eqs M13 and M14 combined
       call self%get_parameter(F,  'F',  'yr-1', 'maximum fishing effort',                        default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
       call self%get_parameter(S1, 'S1', '-',    'offset for fishing selectivity exponent',       default=0.0_rk, minimum=0.0_rk)
       call self%get_parameter(S2, 'S2', 'g-1',  'scale factor for fishing selectivity exponent', default=0.0_rk, minimum=0.0_rk)
       do iclass=1, self%nclass
-         if (self%w(iclass) > w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))
+         if (self%w(iclass) > self%w_minF) self%F(iclass) = F/(1+exp(S1-S2*self%w(iclass)))
       end do
    case (3)
       ! linearly increasing mortality as in Blanchard et al 2009 J Anim Ecol
       call self%get_parameter(F_a, 'F_a', 'yr-1 (log10 g)-1', 'scale factor for fishing mortality as function of log10 mass', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
       call self%get_parameter(F_b, 'F_b', 'yr-1', 'offset for fishing mortality as function of log10 mass', default=0.0_rk, minimum=0.0_rk, scale_factor=1._rk/sec_per_year)
       do iclass=1, self%nclass
-         if (self%w(iclass) > w_minF) self%F(iclass) = F_a * log10(self%w(iclass)) + F_b
+         if (self%w(iclass) > self%w_minF) self%F(iclass) = F_a * log10(self%w(iclass)) + F_b
       end do
    end select
 
@@ -393,11 +402,11 @@ contains
       _DECLARE_ARGUMENTS_DO_BOTTOM_
 
       integer :: iclass,iprey
-      real(rk) :: E_e_pel, E_e_ben,E_a_pel, E_a_ben,f_pel, f_ben,total_reproduction,T_lim,temp,g_tot_pel, g_tot_ben,R,R_p,nflux_pel(0:self%nclass),nflux_ben(0:self%nclass), omega_s
+      real(rk) :: E_e_pel, E_e_ben,E_a_pel, E_a_ben,f_pel, f_ben,total_reproduction,T_lim,temp,g_tot_pel, g_tot_ben,R,R_p,nflux_pel(0:self%nclass),nflux_ben(0:self%nclass), omega_s, FP, FPs
       real(rk) :: T_lim_bot, bot_temp
       real(rk),dimension(self%nprey)  :: Nw_prey,prey_loss_pel, prey_loss_ben, pelspec, benspec
-      real(rk),dimension(self%nclass) :: Nw,I_pel,I_ben, maintenance_pel, maintenance_ben,g_pel, g_ben,mu_pel, mu_ben,reproduction_pel, reproduction_ben, omega
-      real(rk), parameter :: delta_t = 12._rk/86400
+      real(rk),dimension(self%nclass) :: Nw,I_pel,I_ben, maintenance_pel, maintenance_ben,g_pel, g_ben,mu_pel, mu_ben,reproduction_pel, reproduction_ben, omega, Fi
+      real(rk), parameter :: delta_t = 12._rk/86400,  sec_per_year = 86400*365.2425_rk
 
 
       _HORIZONTAL_LOOP_BEGIN_
@@ -423,6 +432,19 @@ contains
             T_lim = 1._rk
             T_lim_bot=1._rk
          end if
+         
+
+         Fi=0._rk
+         !Get parameter for fishing
+         if (self%spatial_fishing) then
+             _GET_HORIZONTAL_(self%id_fishing_pressure, FP)
+             FPs = FP*1._rk/sec_per_year
+             do iclass=1,self%nclass
+                 if (self%w(iclass) > self%w_minF) Fi(iclass) = FPs
+             end do
+         else
+            Fi = self%F
+         end if 
 
          !Determine fraction of time fish spend in pelagic based on ratio of pelagic to demersal food
          !Processing is done in gather forcing file/set as a parameter.  Here we just read it in:
@@ -519,8 +541,8 @@ contains
             ! Avoid shrinking: limit maintenance to maximum sustainable value and increase starvation mortality.
             maintenance_pel(iclass) = min(maintenance_pel(iclass),self%alpha*I_pel(iclass))
             maintenance_ben(iclass) = min(maintenance_ben(iclass),self%alpha*I_ben(iclass))
-            mu_pel(iclass) = mu_pel(iclass) + max(0.0_rk,-g_tot_pel/self%w(iclass)/self%xi)
-            mu_ben(iclass) = mu_ben(iclass) + max(0.0_rk,-g_tot_ben/self%w(iclass)/self%xi)
+            mu_pel(iclass) = mu_pel(iclass) + max(0.0_rk,-g_tot_pel/self%xi)
+            mu_ben(iclass) = mu_ben(iclass) + max(0.0_rk,-g_tot_ben/self%xi)
             g_tot_pel = max(0.0_rk,g_tot_pel)
             g_tot_ben = max(0.0_rk,g_tot_ben)
             ! Individual growth (s-1)
@@ -571,8 +593,8 @@ contains
          ! Transfer size-class-specific source terms and diagnostics to FABM
          do iclass = 1, self%nclass
             ! Apply specific mortality (s-1) to size-class-specific abundances and apply upwind advection - this is a time-explicit version of Eq G.1 of Hartvig et al.
-            _SET_BOTTOM_ODE_(self%id_Nw(iclass), (-(mu_pel(iclass) + self%F(iclass)) * Nw(iclass) + (nflux_pel(iclass - 1) - nflux_pel(iclass)) * self%w(iclass))*omega(iclass))
-            _SET_BOTTOM_ODE_(self%id_Nw(iclass), (-(mu_ben(iclass) + self%F(iclass)) * Nw(iclass) + (nflux_ben(iclass - 1) - nflux_ben(iclass)) * self%w(iclass))*(1._rk-omega(iclass)))
+            _SET_BOTTOM_ODE_(self%id_Nw(iclass), (-(mu_pel(iclass) + Fi(iclass)) * Nw(iclass) + (nflux_pel(iclass - 1) - nflux_pel(iclass)) * self%w(iclass))*omega(iclass))
+            _SET_BOTTOM_ODE_(self%id_Nw(iclass), (-(mu_ben(iclass) + Fi(iclass)) * Nw(iclass) + (nflux_ben(iclass - 1) - nflux_ben(iclass)) * self%w(iclass))*(1._rk-omega(iclass)))
 
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g_pel(iclass), g_pel(iclass) * 86400)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_g_ben(iclass), g_ben(iclass) * 86400)
@@ -584,7 +606,7 @@ contains
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_R, R * 86400)
          _SET_BOTTOM_ODE_(self%id_waste, (sum(((1._rk - self%alpha) * I_pel + maintenance_pel + mu_pel) * Nw*omega) + total_reproduction - R*self%w_min*omega(1)  + nflux_pel(self%nclass) * (self%w(self%nclass) + self%delta_w(self%nclass)*omega(self%nclass))))
          _SET_BOTTOM_ODE_(self%id_waste, (sum(((1._rk - self%alpha) * I_ben + maintenance_ben + mu_ben) * Nw*(1-omega)) + total_reproduction - R*self%w_min*(1-omega(1))  + nflux_ben(self%nclass) * (self%w(self%nclass) + self%delta_w(self%nclass)*(1._rk-omega(self%nclass)))))
-         _SET_BOTTOM_ODE_(self%id_landings, sum(self%F * Nw))
+         _SET_BOTTOM_ODE_(self%id_landings, sum(Fi * Nw))
       _HORIZONTAL_LOOP_END_
 
    end subroutine do_bottom
