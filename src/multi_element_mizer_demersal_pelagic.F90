@@ -112,8 +112,11 @@ module mizer_multi_element_demersal_pelagic_population
 
       type (type_horizontal_dependency_id)                      :: id_T_w_int
       type (type_horizontal_dependency_id)                      :: id_w_int
+      
       type (type_horizontal_diagnostic_variable_id)             :: id_T_ave 
       type (type_horizontal_diagnostic_variable_id)             :: id_c_tot
+      type (type_horizontal_diagnostic_variable_id)             :: id_c_pel
+      type (type_horizontal_diagnostic_variable_id)             :: id_c_dem
       type (type_horizontal_diagnostic_variable_id)             :: id_c_size1
       type (type_horizontal_diagnostic_variable_id)             :: id_c_size2
       type (type_horizontal_diagnostic_variable_id)             :: id_c_size3
@@ -713,6 +716,8 @@ contains
    end if
    call self%register_diagnostic_variable(self%id_R,'R','# m-2 d-1','recruitment',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_tot, 'c_tot', 'g m-2', 'total biomass', source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_c_pel, 'c_pel', 'g m-2', 'total pelagic biomass', source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_c_dem, 'c_dem', 'g m-2', 'total demersal biomass', source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_size1, 'c_size1', 'g m-2', 'fish biomass smaller than threshold1', source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_size2, 'c_size2', 'g m-2', 'fish biomass smaller than threshold2', source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_size3, 'c_size3', 'g m-2', 'fish biomass smaller than threshold3', source=source_do_bottom)
@@ -832,7 +837,7 @@ contains
       real(rk) :: ETW, omega_c,total_ben_prey
       real(rk) :: g_tot_c_pel,g_tot_n_pel,g_tot_p_pel,g_tot_c_ben,g_tot_n_ben,g_tot_p_ben
       real(rk),dimension(self%nprey)  :: prey_c,prey_n,prey_p,prey_s,prey_loss_pel, prey_loss_ben
-      real(rk),dimension(self%nclass) :: Nw,I_c_pel, I_c_ben,I_n_pel,I_p_pel,I_s_pel,I_n_ben,I_p_ben,I_s_ben, omega
+      real(rk),dimension(self%nclass) :: Nw,I_c_pel, I_c_ben,I_n_pel,I_p_pel,I_s_pel,I_n_ben,I_p_ben,I_s_ben, omega, omega_dia
       real(rk),dimension(self%nclass) :: mu_pel,reproduction,maintenance_pel,g_pel,maintenance_ben,g_ben,mu_ben,Fi
       real(rk), parameter :: delta_t = 900, sec_per_year = 86400*365.2425_rk
       real(rk)           :: accessible
@@ -853,6 +858,7 @@ contains
             if (self%w(iclass) > self%lfi_w_threshold) c_lfi = c_lfi + Nw(iclass)
          end do
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_tot, sum(Nw)*g_per_mmol_carbon)
+
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size1, c_size1*g_per_mmol_carbon)
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size2, c_size2*g_per_mmol_carbon)
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size3, c_size3*g_per_mmol_carbon)
@@ -935,6 +941,10 @@ contains
               end if
                _SET_HORIZONTAL_DIAGNOSTIC_(self%id_omega_diag(iclass), omega(iclass))
           end do
+          
+          ! Save diagnostics for pelagic and demersal fish biomass
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_pel, sum(Nw*omega)*g_per_mmol_carbon)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_dem, sum(Nw*(1-omega))*g_per_mmol_carbon) 
           
          ! Food uptake (all size classes, all prey types)
          ! This computes total ingestion per size class (over all prey), and total loss per prey type (over all size classes)
