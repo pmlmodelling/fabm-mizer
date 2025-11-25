@@ -76,8 +76,8 @@ module mizer_multi_element_demersal_pelagic_population
       !type (type_bottom_state_variable_id)                      :: id_discard_n
       !type (type_bottom_state_variable_id)                      :: id_discard_p
       type (type_bottom_state_variable_id)                      :: id_totlandings           ! State variable that will serve as sink for all landed biomass
-      type (type_bottom_state_variable_id)                      :: id_pellandings           
-      type (type_bottom_state_variable_id)                      :: id_demlandings           
+      type (type_horizontal_diagnostic_variable_id)             :: id_pellandings           ! Diagnostic only for separate pelagic
+      type (type_horizontal_diagnostic_variable_id)             :: id_demlandings           ! and demersal landings
       
       type (type_state_variable_id)                      :: id_benwaste_c
       type (type_state_variable_id)                      :: id_benwaste_n
@@ -689,22 +689,14 @@ contains
    call self%add_to_aggregate_variable(standard_variables%total_nitrogen, self%id_totlandings, scale_factor=self%qnc/g_per_mmol_carbon)
    call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_totlandings, scale_factor=self%qpc/g_per_mmol_carbon)
 
-   call self%register_state_variable(self%id_pellandings, 'pellandings', 'g m-2', 'pelagic landed biomass')
-   call self%add_to_aggregate_variable(standard_variables%total_carbon, self%id_pellandings, scale_factor=1.0_rk/g_per_mmol_carbon)
-   call self%add_to_aggregate_variable(standard_variables%total_nitrogen, self%id_pellandings, scale_factor=self%qnc/g_per_mmol_carbon)
-   call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_pellandings, scale_factor=self%qpc/g_per_mmol_carbon)
+   call self%register_horizontal_diagnostic_variable(self%id_pellandings, 'pellandings', 'g m-2 d-1', 'pelagic rate of landed biomass',source=source_do_bottom)
    
-   call self%register_state_variable(self%id_demlandings, 'demlandings', 'g m-2', 'demersal landed biomass')
-   call self%add_to_aggregate_variable(standard_variables%total_carbon, self%id_demlandings, scale_factor=1.0_rk/g_per_mmol_carbon)
-   call self%add_to_aggregate_variable(standard_variables%total_nitrogen, self%id_demlandings, scale_factor=self%qnc/g_per_mmol_carbon)
-   call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_demlandings, scale_factor=self%qpc/g_per_mmol_carbon)
+   call self%register_horizontal_diagnostic_variable(self%id_demlandings, 'demlandings', 'g m-2 d-1', 'demersal rate of landed biomass',source=source_do_bottom)
    
    ! Register diagnostic for total offspring production across population.
    if (self%SRR == 1 .or. self%SRR == 2) then
       call self%register_diagnostic_variable(self%id_total_reproduction,'total_reproduction','mmol C m-2 d-1','total pelagic reproduction',source=source_do_bottom)
-     ! call self%register_diagnostic_variable(self%id_total_reproduction_ben,'total_reproduction_ben','mmol C m-2 d-1','total benthic reproduction',source=source_do_bottom)
       call self%register_diagnostic_variable(self%id_R_p,'R_p','# m-2 d-1','density-independent recruitment',source=source_do_bottom)
-      !call self%register_diagnostic_variable(self%id_R_p_ben,'R_p_ben','# m-2 d-1','density-independent recruitment',source=source_do_bottom)
    elseif (self%SRR == 3) then
       ! Infer biomass of lowest size class by extending spectrum of (small) prey
       call self%register_dependency(self%id_offset, 'prey_spectrum_offset', '-', 'offset of pelagic prey spectrum')
@@ -1194,8 +1186,8 @@ contains
             
          end if
          _SET_BOTTOM_ODE_(self%id_totlandings,sum(Fi*Nw*g_per_mmol_carbon))
-         _SET_BOTTOM_ODE_(self%id_pellandings,sum(Fi*Nw*omega*g_per_mmol_carbon))
-         _SET_BOTTOM_ODE_(self%id_demlandings,sum(Fi*Nw*(1._rk-omega)*g_per_mmol_carbon))
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_pellandings,sum(Fi*Nw*omega*g_per_mmol_carbon*86400))
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_demlandings,sum(Fi*Nw*(1._rk-omega)*g_per_mmol_carbon*86400))
       _HORIZONTAL_LOOP_END_
 
    end subroutine do_bottom
