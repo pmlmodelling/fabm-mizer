@@ -690,7 +690,6 @@ contains
    call self%add_to_aggregate_variable(standard_variables%total_phosphorus, self%id_totlandings, scale_factor=self%qpc/g_per_mmol_carbon)
 
    call self%register_horizontal_diagnostic_variable(self%id_pellandings, 'pellandings', 'g m-2 d-1', 'pelagic rate of landed biomass',source=source_do_bottom)
-   
    call self%register_horizontal_diagnostic_variable(self%id_demlandings, 'demlandings', 'g m-2 d-1', 'demersal rate of landed biomass',source=source_do_bottom)
    
    ! Register diagnostic for total offspring production across population.
@@ -709,10 +708,10 @@ contains
    call self%register_diagnostic_variable(self%id_c_tot, 'c_tot', 'g m-2', 'total biomass', source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_pel, 'c_pel', 'g m-2', 'total pelagic biomass', source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_c_dem, 'c_dem', 'g m-2', 'total demersal biomass', source=source_do_bottom)
-   call self%register_diagnostic_variable(self%id_c_size1, 'c_size1', 'g m-2', 'biomass smaller than threshold1', source=source_do_bottom)
-   call self%register_diagnostic_variable(self%id_c_size2, 'c_size2', 'g m-2', 'biomass smaller than threshold2', source=source_do_bottom)
-   call self%register_diagnostic_variable(self%id_c_size3, 'c_size3', 'g m-2', 'biomass smaller than threshold3', source=source_do_bottom)
-   call self%register_diagnostic_variable(self%id_c_lfi, 'c_lfi', 'g m-2', 'large fish index', source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_c_size1, 'c_size1', 'g m-2', 'pelagic biomass smaller than threshold1', source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_c_size2, 'c_size2', 'g m-2', 'pelagic biomass smaller than threshold2', source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_c_size3, 'c_size3', 'g m-2', 'pelagic biomass smaller than threshold3', source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_c_lfi, 'c_lfi', '-', 'large fish index', source=source_do_bottom)
    
    contains
    
@@ -836,23 +835,10 @@ contains
       _HORIZONTAL_LOOP_BEGIN_
 
          ! Retrieve size-class-specific abundances
-         c_size1 = 0
-         c_size2 = 0
-         c_size3 = 0
-         c_lfi = 0
          do iclass=1,self%nclass
             _GET_HORIZONTAL_(self%id_c(iclass), Nw(iclass))
-            if (self%w(iclass) < self%w_threshold) c_size1 = c_size1 + Nw(iclass)
-            if (self%w(iclass) < self%w_threshold2) c_size2 = c_size2 + Nw(iclass)
-            if (self%w(iclass) < self%w_threshold3) c_size3 = c_size3 + Nw(iclass)
-            if (self%w(iclass) > self%lfi_w_threshold) c_lfi = c_lfi + Nw(iclass)
          end do
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_tot, sum(Nw)*g_per_mmol_carbon)
-
-         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size1, c_size1*g_per_mmol_carbon)
-         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size2, c_size2*g_per_mmol_carbon)
-         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size3, c_size3*g_per_mmol_carbon)
-         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_lfi, (c_lfi/sum(Nw))*g_per_mmol_carbon)
 
          ! Retrieve prey abundances
          do iprey=1,self%nprey
@@ -869,9 +855,6 @@ contains
             !prey_p(iprey) = accessible*prey_p(iprey)
          end do
          
-
-         
-
          ! Temperature limitation factor affecting all rates (not in Blanchard et al.)
          if (self%T_dependence==1) then
             _GET_HORIZONTAL_(self%id_T_w_int, T_w_int)
@@ -918,7 +901,12 @@ contains
           _SET_HORIZONTAL_DIAGNOSTIC_(self%id_w_int_diag,  w_int)
           _SET_HORIZONTAL_DIAGNOSTIC_(self%id_total_ben_prey, total_ben_prey)
           _SET_HORIZONTAL_DIAGNOSTIC_(self%id_omega_diag_con, omega_c)
-          
+         
+          ! Initialise diagnotics for different size classes of pelagic fish 
+          c_size1 = 0
+          c_size2 = 0
+          c_size3 = 0
+          c_lfi = 0
           do iclass=1,self%nclass
               if (self%omega_size) then
                   if (self%w(iclass) > self%omega_threshold) then
@@ -930,11 +918,20 @@ contains
                  omega(iclass)=omega_c
               end if
                _SET_HORIZONTAL_DIAGNOSTIC_(self%id_omega_diag(iclass), omega(iclass))
+              if (self%w(iclass) < self%w_threshold) c_size1 = c_size1 + Nw(iclass)*omega(iclass)
+              if (self%w(iclass) < self%w_threshold2) c_size2 = c_size2 + Nw(iclass)*omega(iclass)
+              if (self%w(iclass) < self%w_threshold3) c_size3 = c_size3 + Nw(iclass)*omega(iclass)
+              if (self%w(iclass) > self%lfi_w_threshold) c_lfi = c_lfi + Nw(iclass)
+
           end do
           
           ! Save diagnostics for pelagic and demersal fish biomass
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_pel, sum(Nw*omega)*g_per_mmol_carbon)
          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_dem, sum(Nw*(1-omega))*g_per_mmol_carbon) 
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size1, c_size1*g_per_mmol_carbon)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size2, c_size2*g_per_mmol_carbon)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_size3, c_size3*g_per_mmol_carbon)
+         _SET_HORIZONTAL_DIAGNOSTIC_(self%id_c_lfi, (c_lfi/sum(Nw))*g_per_mmol_carbon)
           
          ! Food uptake (all size classes, all prey types)
          ! This computes total ingestion per size class (over all prey), and total loss per prey type (over all size classes)
