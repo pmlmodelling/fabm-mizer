@@ -123,7 +123,7 @@ module mizer_multi_element_demersal_pelagic_population
       type (type_horizontal_diagnostic_variable_id), allocatable          :: id_omega_diag(:)
       type (type_horizontal_diagnostic_variable_id)             :: id_fish_benDIP,id_fish_benDIC, id_fish_benDIN, id_benO2_fish
       type (type_horizontal_diagnostic_variable_id)             :: id_fish_benPOC, id_fish_benPON, id_fish_benPOP, id_fish_benPOS
-      type (type_horizontal_diagnostic_variable_id)             :: id_w_int_diag, id_total_ben_prey
+      type (type_horizontal_diagnostic_variable_id)             :: id_w_int_diag, id_total_ben_prey, id_omega_diag_con
 
       real(rk)                                                  :: w_threshold
       real(rk)                                                  :: w_threshold2
@@ -670,6 +670,8 @@ contains
    
    call self%register_diagnostic_variable(self%id_total_ben_prey,'total_ben_prey','mmol m-2','integral of benthic prey',source=source_do_bottom)
    call self%register_diagnostic_variable(self%id_w_int_diag,'w_int_diag','mmol m-2 ','depth integral of pelagic prey',source=source_do_bottom)
+   call self%register_diagnostic_variable(self%id_omega_diag_con, 'omega_diag_con'//trim(strindex) ,            '-',      'time spent in the pelagic', source=source_do_bottom)
+
 
    ! WIP: Including discards from fishers
    !call self%register_bottom_state_dependency(self%id_discard_c, 'discard_c', 'mmol C m-2', 'organic carbon discards')
@@ -919,6 +921,7 @@ contains
           !To remove later
           _SET_HORIZONTAL_DIAGNOSTIC_(self%id_w_int_diag,  w_int)
           _SET_HORIZONTAL_DIAGNOSTIC_(self%id_total_ben_prey, total_ben_prey)
+          _SET_HORIZONTAL_DIAGNOSTIC_(self%id_omega_diag_con, omega_c)
           
           do iclass=1,self%nclass
               if (self%omega_size) then
