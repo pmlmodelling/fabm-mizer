@@ -1151,8 +1151,7 @@ contains
             _SET_BOTTOM_ODE_(self%id_dic,sum(((1-self%alpha-self%alpha_eg)*I_c_pel+maintenance_pel)*Nw*omega))
             _SET_BOTTOM_ODE_(self%id_din,(1-self%alpha-self%alpha_eg)*sum(I_n_pel*Nw*omega))
             _SET_BOTTOM_ODE_(self%id_dip,(1-self%alpha-self%alpha_eg)*sum(I_p_pel*Nw*omega))
-            _SET_BOTTOM_ODE_(self%id_waste_c,(sum(((self%alpha+self%alpha_eg)*I_c_pel +  mu_pel - g_pel/(1-self%psi) -
-            maintenance_pel)*Nw*omega) - R*self%w_min/g_per_mmol_carbon*omega(1)          + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*omega(self%nclass)/g_per_mmol_carbon))
+            _SET_BOTTOM_ODE_(self%id_waste_c,(sum(((self%alpha+self%alpha_eg)*I_c_pel +  mu_pel - g_pel/(1-self%psi) - maintenance_pel)*Nw*omega) - R*self%w_min/g_per_mmol_carbon*omega(1)          + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*omega(self%nclass)/g_per_mmol_carbon))
             _SET_BOTTOM_ODE_(self%id_waste_n,(sum(((self%alpha+self%alpha_eg)*I_n_pel + (mu_pel - g_pel/(1-self%psi))*self%qnc)*Nw*omega) - R*self%w_min/g_per_mmol_carbon*self%qnc*omega(1) + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*omega(self%nclass)/g_per_mmol_carbon*self%qnc))
             _SET_BOTTOM_ODE_(self%id_waste_p,(sum(((self%alpha+self%alpha_eg)*I_p_pel + (mu_pel - g_pel/(1-self%psi))*self%qpc)*Nw*omega) - R*self%w_min/g_per_mmol_carbon*self%qpc*omega(1) + nflux_pel(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*omega(self%nclass)/g_per_mmol_carbon*self%qpc))
             _SET_BOTTOM_ODE_(self%id_waste_s,sum(I_s_pel*Nw*omega))
@@ -1161,8 +1160,7 @@ contains
             _SET_BOTTOM_EXCHANGE_(self%id_bendic,sum(((1-self%alpha-self%alpha_eg)*I_c_ben+maintenance_ben)*Nw*(1-omega)))
             _SET_BOTTOM_EXCHANGE_(self%id_bendin,(1-self%alpha-self%alpha_eg)*sum(I_n_ben*Nw*(1._rk-omega)))
             _SET_BOTTOM_EXCHANGE_(self%id_bendip,(1-self%alpha-self%alpha_eg)*sum(I_p_ben*Nw*(1._rk-omega)))
-            _SET_BOTTOM_EXCHANGE_(self%id_benwaste_c, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben -
-            g_ben/(1-self%psi) - maintenance_ben)*Nw*(1._rk-omega))          + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon))
+            _SET_BOTTOM_EXCHANGE_(self%id_benwaste_c, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben - g_ben/(1-self%psi) - maintenance_ben)*Nw*(1._rk-omega)) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon))
             
             _SET_BOTTOM_EXCHANGE_(self%id_benwaste_n,(sum(((self%alpha+self%alpha_eg)*I_n_ben + (mu_ben - g_ben/(1-self%psi))*self%qnc)*Nw*(1._rk-omega)) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qnc))
             
@@ -1174,8 +1172,7 @@ contains
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_demO2,-self%resp_o2C*sum(((1-self%alpha-self%alpha_eg)*I_c_ben+maintenance_ben)*Nw*(1._rk-omega))*86400) 
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_demDIC,  sum(((1-self%alpha-self%alpha_eg)*I_c_ben+maintenance_ben)*Nw*(1._rk-omega))*86400)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_demDIN, (1-self%alpha-self%alpha_eg)*sum(I_n_ben*Nw*(1._rk-omega))*86400)
-            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_demPOC, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben - g_ben/(1-self%psi)
-            - maintenance_ben)*Nw*(1._rk-omega))          + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon)*86400*CMass)
+            _SET_HORIZONTAL_DIAGNOSTIC_(self%id_demPOC, (sum(((self%alpha+self%alpha_eg)*I_c_ben +  mu_ben - g_ben/(1-self%psi) - maintenance_ben)*Nw*(1._rk-omega)) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon)*86400*CMass)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_demPON, (sum(((self%alpha+self%alpha_eg)*I_n_ben + (mu_ben - g_ben/(1-self%psi))*self%qnc)*Nw*(1._rk-omega)) + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qnc)*86400)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_demPOP,(sum(((self%alpha+self%alpha_eg)*I_p_ben + (mu_ben - g_ben/(1-self%psi))*self%qpc)*Nw*(1._rk-omega))  + nflux_ben(self%nclass)*(self%w(self%nclass)+self%delta_w(self%nclass))*(1._rk-omega(self%nclass))/g_per_mmol_carbon*self%qpc)*86400)
             _SET_HORIZONTAL_DIAGNOSTIC_(self%id_demPOS,sum(I_s_ben*Nw*(1._rk-omega)))
